@@ -7,13 +7,20 @@ LABEL org.opencontainers.image.version=${VERSION}
 # Install system dependencies
 RUN apk update && \
     apk add --no-cache \
-    python3 \
-    py3-pip \
-    ffmpeg \
-    git \
-    wget && \
-    # Install yt-dlp
-    pip3 install --no-cache-dir yt-dlp
+        python3 \
+        py3-pip \
+        ffmpeg \
+        git \
+        wget \
+        gcc \
+        musl-dev \
+        python3-dev \
+        libffi-dev \
+        openssl-dev \
+        cargo && \
+    python3 -m pip install --upgrade pip && \
+    python3 -m pip install --no-cache-dir yt-dlp && \
+    apk del gcc musl-dev python3-dev libffi-dev openssl-dev cargo
 
 # Create app directory
 WORKDIR /app
