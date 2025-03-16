@@ -2,7 +2,7 @@
 chrome.runtime.onInstalled.addListener(() => {
   // Set default configuration
   chrome.storage.local.set({
-    apiUrl: 'http://localhost:3000/api',  // Default API URL
+    apiUrl: 'http://localhost:3001/api',  // Default API URL
     defaultQuality: 'best',
     defaultType: 'movie'
   });
