@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Login - YouTube to Jellyfin</title>
+  <style>
+    :root {
+      --primary-color: #2563eb;
+      --primary-dark: #1d4ed8;
+      --primary-light: #3b82f6;
+      --error-color: #ef4444;
+      --text-color: #0f172a;
+      --text-secondary: #64748b;
+      --border-color: #e2e8f0;
+      --bg-color: #ffffff;
+      --bg-secondary: #f8fafc;
+      --ring-color: rgba(37, 99, 235, 0.2);
+      --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+      --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    }
+
+    body {
+      width: 380px;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif;
+      background: var(--bg-color);
+      color: var(--text-color);
+    }
+
+    .container {
+      padding: 24px;
+    }
+
+    .logo-container {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+
+    .logo {
+      width: 56px;
+      height: 56px;
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 24px;
+      font-weight: 600;
+      text-align: center;
+      color: var(--text-color);
+      letter-spacing: -0.025em;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: var(--text-secondary);
+      font-size: 14px;
+      margin-bottom: 28px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 500;
+      font-size: 14px;
+      color: var(--text-color);
+    }
+
+    input {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      font-size: 14px;
+      transition: all 0.2s;
+      box-sizing: border-box;
+      box-shadow: var(--shadow-sm);
+      background: var(--bg-secondary);
+    }
+
+    input:focus {
+      outline: none;
+      border-color: var(--primary-light);
+      box-shadow: 0 0 0 3px var(--ring-color);
+      background: var(--bg-color);
+    }
+
+    input::placeholder {
+      color: var(--text-secondary);
+    }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      background: var(--primary-color);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-bottom: 20px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    button:hover {
+      background: var(--primary-dark);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    button:disabled {
+      background: var(--text-secondary);
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .error {
+      color: var(--error-color);
+      font-size: 14px;
+      margin-top: 8px;
+      display: none;
+      padding: 10px;
+      background: rgb(239 68 68 / 0.1);
+      border-radius: 6px;
+      border: 1px solid rgb(239 68 68 / 0.2);
+    }
+
+    .setup-guide {
+      margin-top: 28px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .setup-guide h2 {
+      font-size: 16px;
+      margin: 0 0 16px;
+      color: var(--text-color);
+      font-weight: 600;
+    }
+
+    .setup-steps {
+      list-style-type: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .setup-steps li {
+      font-size: 14px;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+      padding-left: 28px;
+      position: relative;
+      line-height: 1.5;
+    }
+
+    .setup-steps li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 2px;
+      width: 18px;
+      height: 18px;
+      background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="%232563eb"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd"/></svg>');
+      background-size: contain;
+      opacity: 0.8;
+    }
+
+    .configure-api {
+      display: inline-flex;
+      align-items: center;
+      color: var(--primary-color);
+      text-decoration: none;
+      font-size: 14px;
+      margin-top: 16px;
+      font-weight: 500;
+      padding: 8px 12px;
+      border-radius: 6px;
+      transition: all 0.2s;
+      background: rgb(37 99 235 / 0.1);
+    }
+
+    .configure-api:hover {
+      background: rgb(37 99 235 / 0.15);
+    }
+
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo-container">
+      <img src="icons/jellyfin.svg" alt="Logo" class="logo">
+      <h1>Welcome back</h1>
+      <div class="subtitle">Login to your Jellyfin account to continue</div>
+    </div>
+
+    <div class="form-group">
+      <label for="username">Username</label>
+      <input type="text" id="username" placeholder="Enter your username" autocomplete="username">
+    </div>
+
+    <div class="form-group">
+      <label for="password">Password</label>
+      <input type="password" id="password" placeholder="Enter your password" autocomplete="current-password">
+    </div>
+
+    <button id="loginButton">Continue</button>
+    <div id="error" class="error"></div>
+
+    <div class="setup-guide">
+      <h2>First Time Setup</h2>
+      <ol class="setup-steps">
+        <li>Install and configure the Jellyfin server</li>
+        <li>Set up the YouTube to Jellyfin API on your server</li>
+        <li>Configure the API endpoint in extension settings</li>
+        <li>Login with your Jellyfin credentials</li>
+      </ol>
+      <a href="#" id="configureApi" class="configure-api">Configure API Settings</a>
+    </div>
+  </div>
+
+  <script src="login.js"></script>
+</body>
+</html> 

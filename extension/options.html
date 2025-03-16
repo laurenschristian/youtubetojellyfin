@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>YouTube to Jellyfin - Settings</title>
+  <style>
+    :root {
+      --background: #ffffff;
+      --foreground: #09090b;
+      --card: #ffffff;
+      --card-foreground: #09090b;
+      --popover: #ffffff;
+      --popover-foreground: #09090b;
+      --primary: #18181b;
+      --primary-foreground: #fafafa;
+      --secondary: #f4f4f5;
+      --secondary-foreground: #18181b;
+      --muted: #f4f4f5;
+      --muted-foreground: #71717a;
+      --accent: #f4f4f5;
+      --accent-foreground: #18181b;
+      --destructive: #ef4444;
+      --destructive-foreground: #fafafa;
+      --border: #e4e4e7;
+      --input: #e4e4e7;
+      --ring: #18181b;
+      --radius: 0.5rem;
+    }
+
+    .dark {
+      --background: #09090b;
+      --foreground: #fafafa;
+      --card: #09090b;
+      --card-foreground: #fafafa;
+      --popover: #09090b;
+      --popover-foreground: #fafafa;
+      --primary: #fafafa;
+      --primary-foreground: #18181b;
+      --secondary: #27272a;
+      --secondary-foreground: #fafafa;
+      --muted: #27272a;
+      --muted-foreground: #a1a1aa;
+      --accent: #27272a;
+      --accent-foreground: #fafafa;
+      --destructive: #7f1d1d;
+      --destructive-foreground: #fafafa;
+      --border: #27272a;
+      --input: #27272a;
+      --ring: #d4d4d8;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--background);
+      color: var(--foreground);
+      min-width: 400px;
+      padding: 1.5rem;
+    }
+
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .logo {
+      width: 48px;
+      height: 48px;
+    }
+
+    .header-text h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+    }
+
+    .subtitle {
+      color: var(--muted-foreground);
+      font-size: 0.875rem;
+    }
+
+    .card {
+      background-color: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .card-header {
+      margin-bottom: 1rem;
+    }
+
+    .card-title {
+      font-size: 1.125rem;
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+    }
+
+    .card-description {
+      color: var(--muted-foreground);
+      font-size: 0.875rem;
+    }
+
+    .form-group {
+      margin-bottom: 1rem;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 500;
+      margin-bottom: 0.5rem;
+    }
+
+    .input {
+      width: 100%;
+      padding: 0.5rem;
+      font-size: 0.875rem;
+      border: 1px solid var(--input);
+      border-radius: var(--radius);
+      background-color: transparent;
+      color: var(--foreground);
+      transition: border-color 0.2s;
+    }
+
+    .input:focus {
+      outline: none;
+      border-color: var(--ring);
+      box-shadow: 0 0 0 1px var(--ring);
+    }
+
+    .connection-status {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+      padding: 0.5rem;
+      border-radius: var(--radius);
+      background-color: var(--secondary);
+    }
+
+    .indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .indicator.connected { background-color: #22c55e; }
+    .indicator.disconnected { background-color: #ef4444; }
+    .indicator.testing { background-color: #f59e0b; }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.5rem 1rem;
+      font-size: 0.875rem;
+      font-weight: 500;
+      border-radius: var(--radius);
+      transition: all 0.2s;
+      cursor: pointer;
+    }
+
+    .button-primary {
+      background-color: var(--primary);
+      color: var(--primary-foreground);
+      border: none;
+    }
+
+    .button-secondary {
+      background-color: var(--secondary);
+      color: var(--secondary-foreground);
+      border: 1px solid var(--border);
+    }
+
+    .button:hover {
+      opacity: 0.9;
+    }
+
+    .button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .status {
+      margin-top: 1rem;
+      padding: 0.75rem;
+      border-radius: var(--radius);
+      font-size: 0.875rem;
+    }
+
+    .status.success {
+      background-color: #dcfce7;
+      color: #166534;
+    }
+
+    .status.error {
+      background-color: #fee2e2;
+      color: #991b1b;
+    }
+
+    .help-text {
+      color: var(--muted-foreground);
+      font-size: 0.75rem;
+      margin-top: 0.25rem;
+    }
+
+    .history-container {
+      margin-top: 2rem;
+    }
+
+    .history-item {
+      padding: 1rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 0.5rem;
+    }
+
+    .history-item .title {
+      font-weight: 500;
+      margin-bottom: 0.25rem;
+    }
+
+    .history-item .meta {
+      color: var(--muted-foreground);
+      font-size: 0.75rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .progress-bar {
+      height: 4px;
+      background-color: var(--secondary);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .progress-bar .fill {
+      height: 100%;
+      background-color: var(--primary);
+      transition: width 0.3s ease;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <img src="icons/icon48.png" alt="Logo" class="logo">
+      <div class="header-text">
+        <h1>YouTube to Jellyfin</h1>
+        <div class="subtitle">Configure your connection settings</div>
+      </div>
+    </header>
+
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">API Connection</h2>
+        <p class="card-description">Configure the connection to your YouTube to Jellyfin API server</p>
+      </div>
+
+      <div class="form-group">
+        <label for="apiUrl">API Server URL</label>
+        <input type="text" id="apiUrl" class="input" placeholder="http://localhost:3001/api">
+        <p class="help-text">The URL where your API server is running</p>
+        <div class="connection-status">
+          <div class="indicator disconnected" id="connectionIndicator"></div>
+          <span id="connectionStatus">Not connected</span>
+          <button class="button button-secondary" id="testConnection">Test Connection</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="apiKey">API Key</label>
+        <input type="password" id="apiKey" class="input">
+        <p class="help-text">The authentication key for accessing the API</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">Download Settings</h2>
+        <p class="card-description">Configure default download preferences</p>
+      </div>
+
+      <div class="form-group">
+        <label for="defaultQuality">Default Video Quality</label>
+        <select id="defaultQuality" class="input">
+          <option value="best">Best Quality</option>
+          <option value="1080p">1080p</option>
+          <option value="720p">720p</option>
+          <option value="480p">480p</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="defaultType">Default Content Type</label>
+        <select id="defaultType" class="input">
+          <option value="movie">Movie</option>
+          <option value="show">TV Show</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="checkbox-label">
+          <input type="checkbox" id="autoDownload">
+          Auto-start downloads
+        </label>
+        <p class="help-text">Automatically start downloading when adding videos</p>
+      </div>
+    </div>
+
+    <div class="button-group" style="display: flex; gap: 0.5rem;">
+      <button id="saveButton" class="button button-primary">Save Settings</button>
+      <button id="resetButton" class="button button-secondary">Reset to Defaults</button>
+    </div>
+
+    <div id="status" class="status" style="display: none;"></div>
+
+    <div class="history-container">
+      <div class="card-header">
+        <h2 class="card-title">Download History</h2>
+        <p class="card-description">Recent downloads and their status</p>
+      </div>
+      <div id="history"></div>
+    </div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html> 

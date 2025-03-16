@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./api:/app
+      - ./config:/config
+      - ./downloads:/downloads
+      - ./completed:/completed
+    environment:
+      - NODE_ENV=development
+      - API_KEY=${API_KEY}
+      - DOWNLOAD_DIR=/downloads
+      - COMPLETED_DIR=/completed
+      - MAX_CONCURRENT_DOWNLOADS=2
+    restart: unless-stopped 

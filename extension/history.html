@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Download History - YouTube to Jellyfin</title>
+  <style>
+    :root {
+      --primary-color: #4CAF50;
+      --primary-dark: #45a049;
+      --error-color: #dc3545;
+      --success-color: #28a745;
+      --text-color: #333;
+      --border-color: #e0e0e0;
+      --bg-color: #ffffff;
+      --bg-secondary: #f8f9fa;
+    }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+      background: var(--bg-color);
+      color: var(--text-color);
+      min-width: 800px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 30px;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 24px;
+      color: var(--text-color);
+    }
+
+    .clear-history {
+      background: none;
+      border: 1px solid var(--error-color);
+      color: var(--error-color);
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s;
+    }
+
+    .clear-history:hover {
+      background: var(--error-color);
+      color: white;
+    }
+
+    .history-list {
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+
+    .history-item {
+      display: grid;
+      grid-template-columns: 1fr auto auto auto auto;
+      gap: 20px;
+      padding: 15px 20px;
+      border-bottom: 1px solid var(--border-color);
+      align-items: center;
+    }
+
+    .history-item:last-child {
+      border-bottom: none;
+    }
+
+    .title {
+      font-weight: 500;
+      color: var(--text-color);
+      text-decoration: none;
+    }
+
+    .title:hover {
+      color: var(--primary-color);
+    }
+
+    .metadata {
+      color: #666;
+      font-size: 14px;
+    }
+
+    .status {
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+      text-transform: uppercase;
+    }
+
+    .status.completed {
+      background: #f0fdf4;
+      color: var(--success-color);
+    }
+
+    .status.downloading {
+      background: #eff6ff;
+      color: #3b82f6;
+    }
+
+    .status.failed {
+      background: #fef2f2;
+      color: var(--error-color);
+    }
+
+    .timestamp {
+      color: #666;
+      font-size: 14px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .action-button {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px;
+      color: #666;
+      transition: color 0.2s;
+    }
+
+    .action-button:hover {
+      color: var(--primary-color);
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: #666;
+    }
+
+    .empty-state svg {
+      width: 64px;
+      height: 64px;
+      margin-bottom: 20px;
+      color: #ccc;
+    }
+
+    .empty-state h2 {
+      margin: 0 0 10px;
+      color: var(--text-color);
+    }
+
+    .empty-state p {
+      margin: 0;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>Download History</h1>
+    <button id="clearHistory" class="clear-history">Clear History</button>
+  </div>
+
+  <div id="historyContainer" class="history-list">
+    <!-- History items will be inserted here -->
+  </div>
+
+  <template id="emptyState">
+    <div class="empty-state">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+      </svg>
+      <h2>No downloads yet</h2>
+      <p>Your download history will appear here</p>
+    </div>
+  </template>
+
+  <template id="historyItem">
+    <div class="history-item">
+      <a href="" class="title" target="_blank"></a>
+      <div class="metadata"></div>
+      <div class="status"></div>
+      <div class="timestamp"></div>
+      <div class="actions">
+        <button class="action-button retry-button" title="Retry Download">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+            <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+          </svg>
+        </button>
+        <button class="action-button delete-button" title="Remove from History">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/>
+            <path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </template>
+
+  <script src="history.js"></script>
+</body>
+</html> 
