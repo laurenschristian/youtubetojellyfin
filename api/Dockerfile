@@ -33,7 +33,7 @@ RUN chown -R node:node /app /config /downloads /completed
 USER node
 
 # Expose port
-EXPOSE 3000
+EXPOSE 3001
 
 # Start the server
 CMD ["npm", "start"] 
