@@ -1,21 +1,24 @@
 version: '3.8'
 
 services:
-  api:
-    build:
-      context: ./api
-      dockerfile: Dockerfile
-    ports:
-      - "3001:3000"
-    volumes:
-      - ./api:/app
-      - ./config:/config
-      - ./downloads:/downloads
-      - ./completed:/completed
+  youtubetojellyfin:
+    image: ghcr.io/laurenschristian/youtubetojellyfin:latest
+    container_name: youtubetojellyfin
     environment:
-      - NODE_ENV=development
-      - API_KEY=${API_KEY}
-      - DOWNLOAD_DIR=/downloads
-      - COMPLETED_DIR=/completed
-      - MAX_CONCURRENT_DOWNLOADS=2
-    restart: unless-stopped 
+      - NODE_ENV=production
+      - OUTPUT_DIR=/downloads
+      # Add your Jellyfin configuration here
+      - JELLYFIN_URL=http://your-jellyfin-server:8096
+      - JELLYFIN_API_KEY=your-api-key
+    volumes:
+      # Update these paths to match your Synology setup
+      - /volume1/docker/youtubetojellyfin/downloads:/downloads
+    ports:
+      - "3001:3001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s 
