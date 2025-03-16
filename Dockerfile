@@ -5,12 +5,32 @@ ARG VERSION
 LABEL org.opencontainers.image.version=${VERSION}
 
 # Install system dependencies
-RUN apk add --no-cache \
+RUN apk update && \
+    apk add --no-cache \
     python3 \
     py3-pip \
     ffmpeg \
-    atomicparsley \
-    git
+    git \
+    wget \
+    # AtomicParsley is not available in Alpine, we'll build it from source
+    build-base \
+    autoconf \
+    automake \
+    libtool \
+    zlib-dev \
+    && \
+    # Build and install AtomicParsley
+    cd /tmp && \
+    git clone https://github.com/wez/atomicparsley.git && \
+    cd atomicparsley && \
+    ./autogen.sh && \
+    ./configure && \
+    make && \
+    make install && \
+    # Cleanup
+    cd / && \
+    rm -rf /tmp/atomicparsley && \
+    apk del build-base autoconf automake libtool
 
 # Create app directory
 WORKDIR /app
