@@ -11,26 +11,9 @@ RUN apk update && \
     py3-pip \
     ffmpeg \
     git \
-    wget \
-    # AtomicParsley is not available in Alpine, we'll build it from source
-    build-base \
-    autoconf \
-    automake \
-    libtool \
-    zlib-dev \
-    && \
-    # Build and install AtomicParsley
-    cd /tmp && \
-    git clone https://github.com/wez/atomicparsley.git && \
-    cd atomicparsley && \
-    ./autogen.sh && \
-    ./configure && \
-    make && \
-    make install && \
-    # Cleanup
-    cd / && \
-    rm -rf /tmp/atomicparsley && \
-    apk del build-base autoconf automake libtool
+    wget && \
+    # Install yt-dlp
+    pip3 install --no-cache-dir yt-dlp
 
 # Create app directory
 WORKDIR /app
@@ -51,7 +34,8 @@ RUN mkdir -p /downloads && \
 # Set environment variables
 ENV NODE_ENV=production \
     OUTPUT_DIR=/downloads \
-    VERSION=${VERSION}
+    VERSION=${VERSION} \
+    PATH="/usr/local/bin:${PATH}"
 
 # Switch to non-root user
 USER node
