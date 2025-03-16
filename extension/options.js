@@ -36,7 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('autoDownload').checked = settings.autoDownload;
       
       // Test connection on load
-      await updateConnectionStatus(settings.apiUrl, settings.apiKey);
+      await updateConnectionStatus();
     } catch (error) {
       console.error('Error loading settings:', error);
       showStatus('Error loading settings', true);
@@ -44,20 +44,18 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   // Update connection status indicator
-  const updateConnectionStatus = async (url, apiKey) => {
-    const indicator = document.getElementById('connectionIndicator');
-    const status = document.getElementById('connectionStatus');
+  const updateConnectionStatus = async () => {
+    const apiUrl = document.getElementById('apiUrl').value;
+    const apiKey = document.getElementById('apiKey').value;
+    const statusElement = document.getElementById('connectionStatus');
     
-    indicator.className = 'indicator testing';
-    status.textContent = 'Testing connection...';
-    console.log('Testing connection to:', url);
+    statusElement.textContent = 'Testing connection...';
+    statusElement.className = 'status pending';
     
-    const result = await testConnection(url, apiKey);
+    const result = await testConnection(apiUrl, apiKey);
     
-    indicator.className = `indicator ${result.success ? 'connected' : 'disconnected'}`;
-    status.textContent = result.message;
-    
-    return result.success;
+    statusElement.textContent = result.message;
+    statusElement.className = `status ${result.success ? 'success' : 'error'}`;
   };
 
   // Test API connection
@@ -66,25 +64,25 @@ document.addEventListener('DOMContentLoaded', () => {
     
     try {
       const response = await fetch(`${url}/health`, {
+        method: 'GET',
         headers: {
           'X-API-Key': apiKey
-        }
+        },
+        mode: 'cors',
+        credentials: 'include'
       });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       
       const data = await response.json();
       console.log('API health check response:', data);
       
-      if (!response.ok) {
-        throw new Error(`API returned status ${response.status}`);
-      }
-      
       return { success: true, message: 'Connection successful' };
     } catch (error) {
-      console.error('API connection test failed:', error);
-      return { 
-        success: false, 
-        message: `Connection failed: ${error.message}`
-      };
+      console.error('Connection test failed:', error);
+      return { success: false, message: `Connection failed: ${error.message}` };
     }
   };
 
@@ -103,7 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
       await chrome.storage.sync.set(settings);
       console.log('Settings saved successfully');
       
-      const connectionResult = await updateConnectionStatus(settings.apiUrl, settings.apiKey);
+      const connectionResult = await updateConnectionStatus();
       showStatus(connectionResult ? 'Settings saved and connection verified' : 'Settings saved but connection failed', !connectionResult);
     } catch (error) {
       console.error('Error saving settings:', error);
@@ -205,7 +203,7 @@ document.addEventListener('DOMContentLoaded', () => {
   testConnectionButton.addEventListener('click', async () => {
     const url = document.getElementById('apiUrl').value.trim();
     const apiKey = document.getElementById('apiKey').value.trim();
-    const result = await updateConnectionStatus(url, apiKey);
+    const result = await updateConnectionStatus();
     showStatus(result ? 'Connection test successful' : 'Connection test failed', !result);
   });
 

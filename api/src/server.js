@@ -21,8 +21,34 @@ const logger = createLogger({
 const app = express();
 
 // Basic security middleware
-app.use(helmet());
-app.use(cors());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  contentSecurityPolicy: false
+}));
+
+// CORS configuration
+app.use(cors({
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    // Allow Chrome extension origins
+    if (origin.startsWith('chrome-extension://')) {
+      return callback(null, true);
+    }
+    
+    // Allow localhost during development
+    if (origin.match(/^http:\/\/localhost(:\d+)?$/)) {
+      return callback(null, true);
+    }
+    
+    callback(new Error('Not allowed by CORS'));
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'X-API-Key', 'Authorization'],
+  credentials: true
+}));
+
 app.use(express.json());
 
 // Rate limiting
@@ -40,6 +66,9 @@ app.use((req, res, next) => {
   });
   next();
 });
+
+// Add CORS headers for preflight requests
+app.options('*', cors());
 
 // Health check endpoint
 app.get('/health', (req, res) => {
