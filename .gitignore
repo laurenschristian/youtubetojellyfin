@@ -1,28 +1,43 @@
-# Node.js
+# Video files
+completed/movies/**/*.mp4
+completed/movies/**/*.mkv
+completed/movies/**/*.webp
+
+# Node modules
 node_modules/
-npm-debug.log
-yarn-debug.log
-yarn-error.log
 
 # Environment variables
 .env
 .env.local
 .env.*.local
 
-# Logs
-logs/
+# Log files
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor directories and files
+.idea
+.vscode
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
 # Build output
 dist/
 build/
-
-# IDE and editor files
-.idea/
-.vscode/
-*.swp
-*.swo
-.DS_Store
 
 # Chrome Extension
 extension/*.pem
