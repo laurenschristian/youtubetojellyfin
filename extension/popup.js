@@ -1,5 +1,5 @@
 // Configuration and state
-let API_URL = 'http://localhost:3001/api'; // Will be updated from storage
+let API_URL = 'http://localhost:3001'; // Will be updated from storage
 let currentTab = null;
 let downloadId = null;
 let statusCheckInterval = null;
@@ -139,7 +139,7 @@ async function loadSettings() {
   console.log('Loading extension settings...');
   try {
     currentSettings = await chrome.storage.sync.get({
-      apiUrl: 'http://localhost:3001/api',
+      apiUrl: 'http://localhost:3001',
       apiKey: '',
       defaultType: 'movie',
       autoDownload: false

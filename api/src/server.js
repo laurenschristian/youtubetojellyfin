@@ -42,7 +42,7 @@ app.use((req, res, next) => {
 });
 
 // Health check endpoint
-app.get('/api/health', (req, res) => {
+app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
@@ -61,12 +61,12 @@ const authRoutes = require('./routes/auth');
 const settingsRoutes = require('./routes/settings');
 
 // Register routes
-app.use('/api/videos', videoRoutes);
-app.use('/api/auth', authRoutes);
-app.use('/api/settings', settingsRoutes);
+app.use('/videos', videoRoutes);
+app.use('/auth', authRoutes);
+app.use('/settings', settingsRoutes);
 
 // Start server
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   logger.info(`Server running on port ${PORT}`);
 }); 
