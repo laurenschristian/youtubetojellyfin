@@ -2,6 +2,7 @@ const execa = require('execa');
 const path = require('path');
 const fs = require('fs').promises;
 const { createLogger, format, transports } = require('winston');
+const { logFileAccess } = require('../middleware/audit');
 
 // Initialize logger
 const logger = createLogger({
@@ -11,37 +12,51 @@ const logger = createLogger({
   ),
   transports: [
     new transports.Console(),
-    new transports.File({ filename: '/config/video-service.log' })
+    new transports.File({ 
+      filename: `${process.env.LOG_DIR}/video-service.log` 
+    })
   ]
 });
-
-// Download queue and status tracking
-const downloads = new Map();
-const activeDownloads = new Set();
 
 // Constants
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 5000; // 5 seconds
-const MAX_CONCURRENT_DOWNLOADS = process.env.MAX_CONCURRENT_DOWNLOADS || 2;
+const MAX_CONCURRENT_DOWNLOADS = parseInt(process.env.MAX_CONCURRENT_DOWNLOADS, 10) || 2;
+const MAX_FILE_SIZE_GB = parseInt(process.env.MAX_FILE_SIZE_GB, 10) || 10;
+const MAX_TITLE_LENGTH = parseInt(process.env.MAX_TITLE_LENGTH, 10) || 200;
+const ALLOWED_VIDEO_FORMATS = (process.env.ALLOWED_VIDEO_FORMATS || 'mp4,mkv').split(',');
+
+// Download tracking
+const downloads = new Map();
+const activeDownloads = new Set();
 
 // Generate unique download ID
 const generateDownloadId = () => {
   return `dl_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 };
 
-// Update download status
-const updateStatus = (id, status, progress = null, error = null) => {
-  downloads.set(id, {
+// Update download status with audit logging
+const updateStatus = async (id, status, progress = null, error = null) => {
+  const statusData = {
     status,
     progress,
     error,
     timestamp: new Date().toISOString()
+  };
+  
+  downloads.set(id, statusData);
+
+  // Log status updates for auditing
+  logger.info({
+    event: 'status_update',
+    downloadId: id,
+    ...statusData
   });
 };
 
 // Validate environment variables
 const validateEnvironment = () => {
-  const required = ['DOWNLOAD_DIR', 'COMPLETED_DIR'];
+  const required = ['DOWNLOAD_DIR', 'COMPLETED_DIR', 'LOG_DIR'];
   const missing = required.filter(key => !process.env[key]);
   
   if (missing.length > 0) {
@@ -55,26 +70,55 @@ const checkDiskSpace = async (dir) => {
     const stats = await fs.statfs(dir);
     const availableGB = (stats.bavail * stats.bsize) / (1024 * 1024 * 1024);
     
-    if (availableGB < 10) { // Require at least 10GB free
-      throw new Error(`Insufficient disk space: ${availableGB.toFixed(2)}GB available`);
+    if (availableGB < MAX_FILE_SIZE_GB) {
+      throw new Error(`Insufficient disk space: ${availableGB.toFixed(2)}GB available, need at least ${MAX_FILE_SIZE_GB}GB`);
     }
+
+    logger.info({
+      event: 'disk_space_check',
+      directory: dir,
+      availableGB: availableGB.toFixed(2)
+    });
   } catch (error) {
+    logger.error({
+      event: 'disk_space_check_failed',
+      directory: dir,
+      error: error.message
+    });
     throw new Error(`Failed to check disk space: ${error.message}`);
   }
 };
 
-// Clean up temporary files
+// Clean up temporary files with audit logging
 const cleanupTempFiles = async (tempDir) => {
   try {
+    await logFileAccess('delete_temp', tempDir);
     await fs.rm(tempDir, { recursive: true, force: true });
+    logger.info({
+      event: 'cleanup_success',
+      directory: tempDir
+    });
   } catch (error) {
-    logger.error(`Failed to cleanup temp directory ${tempDir}:`, error);
+    logger.error({
+      event: 'cleanup_failed',
+      directory: tempDir,
+      error: error.message
+    });
   }
 };
 
-// Verify video file integrity
+// Verify video file integrity and size
 const verifyVideoFile = async (filePath) => {
   try {
+    // Check file size
+    const stats = await fs.stat(filePath);
+    const fileSizeGB = stats.size / (1024 * 1024 * 1024);
+    
+    if (fileSizeGB > MAX_FILE_SIZE_GB) {
+      throw new Error(`File size ${fileSizeGB.toFixed(2)}GB exceeds limit of ${MAX_FILE_SIZE_GB}GB`);
+    }
+
+    // Verify video integrity
     const { stdout } = await execa('ffprobe', [
       '-v', 'error',
       '-select_streams', 'v:0',
@@ -88,8 +132,11 @@ const verifyVideoFile = async (filePath) => {
       throw new Error('No video stream found in file');
     }
 
+    // Log successful verification
+    await logFileAccess('verify_video', filePath, true);
     return true;
   } catch (error) {
+    await logFileAccess('verify_video', filePath, false, error);
     throw new Error(`Video file verification failed: ${error.message}`);
   }
 };
@@ -103,30 +150,43 @@ const downloadVideo = async (url, type = 'movie', retryCount = 0) => {
   }
 
   const downloadId = generateDownloadId();
-  updateStatus(downloadId, 'starting');
+  await updateStatus(downloadId, 'starting');
 
-  // Create temporary download directory
+  // Create temporary download directory with proper permissions
   const tempDir = path.join(process.env.DOWNLOAD_DIR, downloadId);
-  await fs.mkdir(tempDir, { recursive: true });
+  try {
+    await fs.mkdir(tempDir, { 
+      recursive: true, 
+      mode: parseInt(process.env.DIR_PERMISSION_MODE, 8) 
+    });
+    await logFileAccess('create_directory', tempDir, true);
+  } catch (error) {
+    await logFileAccess('create_directory', tempDir, false, error);
+    throw error;
+  }
 
   try {
     await checkDiskSpace(process.env.DOWNLOAD_DIR);
     await checkDiskSpace(process.env.COMPLETED_DIR);
 
     activeDownloads.add(downloadId);
-
-    // Start download process
     await processVideo(url, type, downloadId, tempDir);
 
     return downloadId;
   } catch (error) {
     if (retryCount < MAX_RETRIES && error.message.includes('network')) {
-      logger.warn(`Retrying download (${retryCount + 1}/${MAX_RETRIES}):`, error);
+      logger.warn({
+        event: 'download_retry',
+        downloadId,
+        attempt: retryCount + 1,
+        maxRetries: MAX_RETRIES,
+        error: error.message
+      });
       await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
       return downloadVideo(url, type, retryCount + 1);
     }
 
-    updateStatus(downloadId, 'failed', null, error.message);
+    await updateStatus(downloadId, 'failed', null, error.message);
     await cleanupTempFiles(tempDir);
     throw error;
   } finally {
@@ -137,9 +197,13 @@ const downloadVideo = async (url, type = 'movie', retryCount = 0) => {
 // Main video processing function
 const processVideo = async (url, type, downloadId, tempDir) => {
   try {
-    // Download video with yt-dlp
-    updateStatus(downloadId, 'downloading');
-    logger.info(`Starting download for ${url} to ${tempDir}`);
+    await updateStatus(downloadId, 'downloading');
+    logger.info({
+      event: 'download_start',
+      url,
+      downloadId,
+      tempDir
+    });
     
     const downloadArgs = [
       '--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
@@ -149,111 +213,107 @@ const processVideo = async (url, type, downloadId, tempDir) => {
       '--no-mtime',
       '--progress',
       '--newline',
-      '--no-playlist', // Prevent playlist downloads
-      '--max-filesize', '10G', // Limit file size to 10GB
+      '--no-playlist',
+      '--max-filesize', `${MAX_FILE_SIZE_GB}G`,
       url,
       '-o', path.join(tempDir, '%(title)s.%(ext)s')
     ];
 
-    logger.info(`Running yt-dlp with args: ${downloadArgs.join(' ')}`);
     const downloadProcess = execa('yt-dlp', downloadArgs);
     
-    // Handle download progress
     downloadProcess.stdout.on('data', (data) => {
       const progressMatch = data.toString().match(/(\d+\.?\d*)%/);
       if (progressMatch) {
         updateStatus(downloadId, 'downloading', parseFloat(progressMatch[1]));
-        logger.debug(`Download progress: ${progressMatch[1]}%`);
       }
     });
 
     await downloadProcess;
-    logger.info('Download completed, checking files');
 
-    // Get downloaded file info
     const files = await fs.readdir(tempDir);
-    logger.info(`Files in temp directory: ${files.join(', ')}`);
-    
-    const videoFile = files.find(f => f.endsWith('.mp4'));
+    const videoFile = files.find(f => ALLOWED_VIDEO_FORMATS.some(format => f.endsWith(`.${format}`)));
     const infoFile = files.find(f => f.endsWith('.info.json'));
     
     if (!videoFile || !infoFile) {
       throw new Error('Download failed - missing output files');
     }
 
-    logger.info(`Found video file: ${videoFile}`);
-    logger.info(`Found info file: ${infoFile}`);
-
-    // Verify video file integrity
     await verifyVideoFile(path.join(tempDir, videoFile));
-    logger.info('Video file integrity verified');
 
-    // Read video metadata
     const metadata = JSON.parse(
       await fs.readFile(path.join(tempDir, infoFile), 'utf-8')
     );
 
-    // Sanitize title for filesystem
+    // Sanitize and validate title
     const sanitizedTitle = metadata.title
-      .replace(/[^a-zA-Z0-9-_]/g, '_') // Replace any non-alphanumeric characters with underscore
-      .replace(/_+/g, '_') // Replace multiple underscores with a single one
-      .replace(/^_|_$/g, ''); // Remove leading/trailing underscores
-    logger.info(`Sanitized title: ${sanitizedTitle}`);
+      .replace(/[^a-zA-Z0-9-_]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_|_$/g, '')
+      .substring(0, MAX_TITLE_LENGTH);
 
-    // Create final directory structure
     const finalDir = path.join(
       process.env.COMPLETED_DIR,
       type === 'movie' ? 'movies' : 'shows',
       sanitizedTitle
     );
     
-    logger.info(`Creating final directory: ${finalDir}`);
-    await fs.mkdir(finalDir, { recursive: true });
+    await fs.mkdir(finalDir, { 
+      recursive: true,
+      mode: parseInt(process.env.DIR_PERMISSION_MODE, 8)
+    });
+    await logFileAccess('create_directory', finalDir, true);
 
-    // Move video to final location
-    updateStatus(downloadId, 'moving');
-    logger.info(`Moving video file to: ${path.join(finalDir, videoFile)}`);
+    // Move files with proper permissions
+    await updateStatus(downloadId, 'moving');
     
-    await fs.copyFile(
+    const moveFile = async (source, dest) => {
+      await fs.copyFile(source, dest);
+      await fs.chmod(dest, parseInt(process.env.FILE_PERMISSION_MODE, 8));
+      await fs.unlink(source);
+      await logFileAccess('move_file', dest, true);
+    };
+
+    await moveFile(
       path.join(tempDir, videoFile),
       path.join(finalDir, videoFile)
     );
-    await fs.unlink(path.join(tempDir, videoFile));
 
-    // Copy thumbnail and metadata
     const thumbnailFile = files.find(f => f.match(/\.(jpg|png|webp)$/));
     if (thumbnailFile) {
-      logger.info(`Moving thumbnail: ${thumbnailFile}`);
-      await fs.copyFile(
+      await moveFile(
         path.join(tempDir, thumbnailFile),
         path.join(finalDir, thumbnailFile)
       );
-      await fs.unlink(path.join(tempDir, thumbnailFile));
     }
 
-    logger.info('Moving metadata file');
-    await fs.copyFile(
+    await moveFile(
       path.join(tempDir, infoFile),
       path.join(finalDir, 'metadata.json')
     );
-    await fs.unlink(path.join(tempDir, infoFile));
 
-    // Cleanup temp directory
     await cleanupTempFiles(tempDir);
-    logger.info('Temporary files cleaned up');
+    await updateStatus(downloadId, 'completed', 100);
 
-    updateStatus(downloadId, 'completed', 100);
-    logger.info(`Video processing completed: ${metadata.title}`);
+    logger.info({
+      event: 'download_complete',
+      downloadId,
+      title: metadata.title,
+      finalPath: finalDir
+    });
 
   } catch (error) {
-    logger.error('Video processing error:', error);
+    logger.error({
+      event: 'download_error',
+      downloadId,
+      error: error.message
+    });
     await cleanupTempFiles(tempDir);
     throw error;
   }
 };
 
 // Get video status
-const getVideoStatus = async (downloadId) => {
+const getVideoStatus = (downloadId) => {
   const status = downloads.get(downloadId);
   if (!status) {
     throw new Error('Download not found');
