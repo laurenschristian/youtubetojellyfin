@@ -66,10 +66,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const response = await fetch(`${url}/health`, {
         method: 'GET',
         headers: {
-          'X-API-Key': apiKey
+          'X-API-Key': apiKey,
+          'Content-Type': 'application/json'
         },
-        mode: 'cors',
-        credentials: 'include'
+        mode: 'cors'
       });
       
       if (!response.ok) {

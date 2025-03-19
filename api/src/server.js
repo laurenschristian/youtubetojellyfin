@@ -20,33 +20,19 @@ const logger = createLogger({
 // Initialize Express app
 const app = express();
 
-// Basic security middleware
+// Basic security middleware with relaxed settings for development
 app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginResourcePolicy: false,
+  crossOriginEmbedderPolicy: false,
   contentSecurityPolicy: false
 }));
 
 // CORS configuration
 app.use(cors({
-  origin: function(origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    // Allow Chrome extension origins
-    if (origin.startsWith('chrome-extension://')) {
-      return callback(null, true);
-    }
-    
-    // Allow localhost during development
-    if (origin.match(/^http:\/\/localhost(:\d+)?$/)) {
-      return callback(null, true);
-    }
-    
-    callback(new Error('Not allowed by CORS'));
-  },
+  origin: true, // Allow all origins
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'X-API-Key', 'Authorization'],
-  credentials: true
+  credentials: false // Set to false since we don't need credentials
 }));
 
 app.use(express.json());
@@ -60,6 +46,11 @@ app.use(limiter);
 
 // Request logging middleware
 app.use((req, res, next) => {
+  // Add CORS headers to every response
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, X-API-Key, Authorization');
+  
   logger.info(`${req.method} ${req.url}`, {
     ip: req.ip,
     userAgent: req.get('user-agent')
@@ -67,8 +58,13 @@ app.use((req, res, next) => {
   next();
 });
 
-// Add CORS headers for preflight requests
-app.options('*', cors());
+// Handle preflight requests
+app.options('*', (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, X-API-Key, Authorization');
+  res.status(204).send();
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => {

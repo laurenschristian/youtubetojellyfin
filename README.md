@@ -58,7 +58,6 @@ volumes:
 ```
 
 ## Security
-
 - All API endpoints are HTTPS-only
 - JWT-based authentication
 - Rate limiting enabled
