@@ -1,39 +1,46 @@
-FROM node:20-alpine
+# Use slim Node.js image
+FROM node:20-slim
 
-# Install system dependencies
-RUN apk add --no-cache \
+# Set environment variables
+ENV NODE_ENV=production \
+    PORT=3001
+
+WORKDIR /app
+
+# Install only the necessary system dependencies
+RUN apt-get update && apt-get install -y \
     python3 \
+    python3-pip \
     ffmpeg \
-    curl \
-    bash
+    wget \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install yt-dlp
-RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
+RUN wget https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -O /usr/local/bin/yt-dlp && \
     chmod a+rx /usr/local/bin/yt-dlp
-
-# Create app directory
-WORKDIR /app
 
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install --production=false
+# Install only production dependencies
+RUN npm ci --only=production
 
 # Copy source code
-COPY . .
+COPY src/ ./src/
 
-# Create necessary directories
-RUN mkdir -p /config /downloads /completed
-
-# Set permissions
-RUN chown -R node:node /app /config /downloads /completed
+# Create required directories with proper permissions
+RUN mkdir -p /config /downloads /completed /app/logs && \
+    chown -R node:node /config /downloads /completed /app/logs
 
 # Switch to non-root user
 USER node
 
-# Expose port
-EXPOSE 3001
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT}/api/health || exit 1
 
-# Start the server
+# Expose API port
+EXPOSE ${PORT}
+
+# Start the application
 CMD ["npm", "start"] 
