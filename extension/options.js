@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const defaultQualitySelect = document.getElementById('defaultQuality');
   const defaultTypeSelect = document.getElementById('defaultType');
   const autoDownloadCheckbox = document.getElementById('autoDownload');
+  const showLogsCheckbox = document.getElementById('showLogs');
   const saveButton = document.getElementById('saveButton');
   const resetButton = document.getElementById('resetButton');
   const testConnectionButton = document.getElementById('testConnection');
@@ -18,7 +19,8 @@ document.addEventListener('DOMContentLoaded', () => {
     apiKey: '',
     defaultQuality: 'best',
     defaultType: 'movie',
-    autoDownload: false
+    autoDownload: false,
+    showLogs: false
   };
 
   // Load saved settings
@@ -28,14 +30,18 @@ document.addEventListener('DOMContentLoaded', () => {
       const settings = await chrome.storage.sync.get(DEFAULT_SETTINGS);
       console.log('Settings loaded:', { ...settings, apiKey: '[REDACTED]' });
       
-      apiUrlInput.value = settings.apiUrl;
-      apiKeyInput.value = settings.apiKey;
-      defaultQualitySelect.value = settings.defaultQuality;
-      defaultTypeSelect.value = settings.defaultType;
-      autoDownloadCheckbox.checked = settings.autoDownload;
+      // Update input fields with saved values
+      apiUrlInput.value = settings.apiUrl || DEFAULT_SETTINGS.apiUrl;
+      apiKeyInput.value = settings.apiKey || DEFAULT_SETTINGS.apiKey;
+      defaultQualitySelect.value = settings.defaultQuality || DEFAULT_SETTINGS.defaultQuality;
+      defaultTypeSelect.value = settings.defaultType || DEFAULT_SETTINGS.defaultType;
+      autoDownloadCheckbox.checked = settings.autoDownload || DEFAULT_SETTINGS.autoDownload;
+      showLogsCheckbox.checked = settings.showLogs || DEFAULT_SETTINGS.showLogs;
       
-      // Test connection on load
-      await testConnection();
+      // Test connection on load if we have both URL and key
+      if (settings.apiUrl && settings.apiKey) {
+        await testConnection();
+      }
     } catch (error) {
       console.error('Error loading settings:', error);
       showStatus('Error loading settings', true);
@@ -132,12 +138,21 @@ document.addEventListener('DOMContentLoaded', () => {
       apiKey: apiKeyInput.value.trim(),
       defaultQuality: defaultQualitySelect.value,
       defaultType: defaultTypeSelect.value,
-      autoDownload: autoDownloadCheckbox.checked
+      autoDownload: autoDownloadCheckbox.checked,
+      showLogs: showLogsCheckbox.checked
     };
     
     try {
+      // Save to chrome.storage.sync for persistence
       await chrome.storage.sync.set(settings);
       console.log('Settings saved successfully');
+      
+      // Also save to chrome.storage.local for faster access
+      await chrome.storage.local.set({
+        apiUrl: settings.apiUrl,
+        apiKey: settings.apiKey,
+        showLogs: settings.showLogs
+      });
       
       const connectionSuccess = await testConnection();
       showStatus(

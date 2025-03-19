@@ -6,6 +6,63 @@ let statusCheckInterval = null;
 let currentVideoUrl = null;
 let currentSettings = null;
 let downloadHistory = [];
+let isLogViewerExpanded = false;
+let showLogs = false;
+
+// Override console.log to capture logs
+const originalConsoleLog = console.log;
+const originalConsoleError = console.error;
+console.log = function() {
+  addLogEntry('info', Array.from(arguments).join(' '));
+  originalConsoleLog.apply(console, arguments);
+};
+console.error = function() {
+  addLogEntry('error', Array.from(arguments).join(' '));
+  originalConsoleError.apply(console, arguments);
+};
+
+// Add log entry to the viewer
+function addLogEntry(type, message) {
+  if (!showLogs) return;
+  
+  const logEntries = document.getElementById('logEntries');
+  if (!logEntries) return;
+
+  const entry = document.createElement('div');
+  entry.className = `log-entry ${type}`;
+  
+  const timestamp = document.createElement('span');
+  timestamp.className = 'timestamp';
+  timestamp.textContent = new Date().toLocaleTimeString();
+  
+  const content = document.createElement('span');
+  content.className = 'content';
+  content.textContent = message;
+  
+  entry.appendChild(timestamp);
+  entry.appendChild(content);
+  
+  logEntries.appendChild(entry);
+  
+  // Keep only the last 50 entries
+  while (logEntries.children.length > 50) {
+    logEntries.removeChild(logEntries.firstChild);
+  }
+  
+  // Scroll to bottom
+  logEntries.scrollTop = logEntries.scrollHeight;
+}
+
+// Toggle log viewer
+function toggleLogViewer() {
+  const logContent = document.getElementById('logContent');
+  const logToggle = document.getElementById('logToggle');
+  
+  isLogViewerExpanded = !isLogViewerExpanded;
+  
+  logContent.classList.toggle('expanded', isLogViewerExpanded);
+  logToggle.classList.toggle('expanded', isLogViewerExpanded);
+}
 
 // Utility functions
 function showStatus(message, isError = false) {
@@ -138,23 +195,57 @@ async function testApiConnection() {
 async function loadSettings() {
   console.log('Loading extension settings...');
   try {
-    currentSettings = await chrome.storage.sync.get({
-      apiUrl: 'http://localhost:3001',
-      apiKey: '',
-      defaultType: 'movie',
-      autoDownload: false
-    });
-    console.log('Settings loaded:', { ...currentSettings, apiKey: '[REDACTED]' });
+    // Try to get settings from local storage first (faster)
+    let settings = await chrome.storage.local.get(['apiUrl', 'apiKey', 'showLogs']);
+    
+    // If not found in local, get from sync storage
+    if (!settings.apiUrl || !settings.apiKey) {
+      settings = await chrome.storage.sync.get({
+        apiUrl: 'http://localhost:3001',
+        apiKey: '',
+        defaultType: 'movie',
+        autoDownload: false,
+        showLogs: false
+      });
+      
+      // Save to local storage for faster access next time
+      if (settings.apiUrl && settings.apiKey) {
+        await chrome.storage.local.set({
+          apiUrl: settings.apiUrl,
+          apiKey: settings.apiKey,
+          showLogs: settings.showLogs
+        });
+      }
+    }
+    
+    currentSettings = settings;
+    showLogs = settings.showLogs;
+    
+    // Show/hide log viewer based on settings
+    const logViewer = document.getElementById('logViewer');
+    if (logViewer) {
+      logViewer.style.display = showLogs ? 'block' : 'none';
+    }
+    
+    console.log('Settings loaded:', { ...settings, apiKey: '[REDACTED]' });
     
     const typeSelect = document.getElementById('type');
     if (typeSelect) {
-      typeSelect.value = currentSettings.defaultType;
+      typeSelect.value = settings.defaultType || 'movie';
     }
     
     // Test API connection
-    const connectionTest = await testApiConnection();
-    if (!connectionTest.success) {
-      showStatus('API connection failed. Please check settings.', true);
+    if (settings.apiUrl && settings.apiKey) {
+      const connectionTest = await testApiConnection();
+      if (!connectionTest.success) {
+        showStatus('API connection failed. Please check settings.', true);
+        const sendButton = document.getElementById('sendButton');
+        if (sendButton) {
+          sendButton.disabled = true;
+        }
+      }
+    } else {
+      showStatus('Please configure API settings', true);
       const sendButton = document.getElementById('sendButton');
       if (sendButton) {
         sendButton.disabled = true;
@@ -168,19 +259,12 @@ async function loadSettings() {
 
 function setButtonLoading(loading) {
   const button = document.getElementById('sendButton');
-  const spinner = button.querySelector('.spinner');
-  const content = button.querySelector('.button-content');
-  
   if (loading) {
-    button.classList.add('button-loading');
+    button.classList.add('button-loading', 'downloading');
     button.disabled = true;
-    spinner.style.display = 'inline-block';
-    content.style.opacity = '0.7';
   } else {
-    button.classList.remove('button-loading');
+    button.classList.remove('button-loading', 'downloading');
     button.disabled = false;
-    spinner.style.display = 'none';
-    content.style.opacity = '1';
   }
 }
 
@@ -214,13 +298,26 @@ async function startDownload() {
       },
       body: JSON.stringify({ url: videoUrl, type })
     });
-    
-    const data = await response.json();
-    console.log('Download request response:', data);
-    
+
+    // Check if response is ok before trying to parse JSON
     if (!response.ok) {
-      throw new Error(data.message || `API error: ${response.status}`);
+      const errorText = await response.text();
+      console.error('API error response:', errorText);
+      throw new Error(`API error: ${response.status} - ${errorText}`);
     }
+
+    // Try to parse JSON response
+    let data;
+    try {
+      const text = await response.text();
+      console.log('Raw API response:', text);
+      data = JSON.parse(text);
+    } catch (parseError) {
+      console.error('Failed to parse API response:', parseError);
+      throw new Error('Invalid API response format');
+    }
+
+    console.log('Download request response:', data);
     
     // Add to history with title
     addToHistory({
@@ -273,10 +370,22 @@ async function pollDownloadProgress(downloadId) {
       });
       
       if (!response.ok) {
-        throw new Error(`Failed to get download status: ${response.status}`);
+        const errorText = await response.text();
+        console.error('API error response:', errorText);
+        throw new Error(`Failed to get download status: ${response.status} - ${errorText}`);
       }
       
-      const data = await response.json();
+      // Try to parse JSON response
+      let data;
+      try {
+        const text = await response.text();
+        console.log('Raw progress response:', text);
+        data = JSON.parse(text);
+      } catch (parseError) {
+        console.error('Failed to parse progress response:', parseError);
+        throw new Error('Invalid progress response format');
+      }
+
       console.log('Download status:', data);
       
       if (data.progress) {
@@ -301,7 +410,7 @@ async function pollDownloadProgress(downloadId) {
       console.error('Error polling download status:', error);
       clearInterval(pollInterval);
       setButtonLoading(false);
-      showStatus('Failed to get download status', true);
+      showStatus('Failed to get download status: ' + error.message, true);
     }
   }, 2000); // Poll every 2 seconds
 }
@@ -392,6 +501,11 @@ document.addEventListener('DOMContentLoaded', () => {
     settingsButton.addEventListener('click', () => {
       chrome.runtime.openOptionsPage();
     });
+  }
+  
+  const logToggle = document.getElementById('logToggle');
+  if (logToggle) {
+    logToggle.addEventListener('click', toggleLogViewer);
   }
 });
 
