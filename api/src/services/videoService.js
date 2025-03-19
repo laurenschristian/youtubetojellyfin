@@ -1,4 +1,4 @@
-const { execa } = require('execa');
+const execa = require('execa');
 const path = require('path');
 const fs = require('fs').promises;
 const { createLogger, format, transports } = require('winston');
