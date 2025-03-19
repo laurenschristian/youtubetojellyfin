@@ -84,8 +84,13 @@ app.get('/', (req, res) => {
   });
 });
 
-// Health check endpoint (no auth required)
+// Health check endpoints (no auth required)
 app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Additional health check endpoint with /api prefix
+app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
@@ -103,10 +108,10 @@ const videoRoutes = require('./routes/videos');
 const authRoutes = require('./routes/auth');
 const settingsRoutes = require('./routes/settings');
 
-// Register routes
-app.use('/videos', videoRoutes);
-app.use('/auth', authRoutes);
-app.use('/settings', settingsRoutes);
+// Mount routes with /api prefix
+app.use('/api/videos', videoRoutes);
+app.use('/api/auth', authRoutes);
+app.use('/api/settings', settingsRoutes);
 
 // Start server
 const PORT = process.env.PORT || 3001;

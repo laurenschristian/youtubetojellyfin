@@ -1,31 +1,25 @@
-version: '3.8'
-
 services:
-  youtubetojellyfin:
-    image: ghcr.io/laurenschristian/youtubetojellyfin:latest
-    container_name: youtubetojellyfin
-    environment:
-      - NODE_ENV=production
-      - OUTPUT_DIR=/downloads
-      # Extension Configuration
-      # This is the API key you set in the Chrome extension's settings
-      # Generate a random string for security (e.g., use a password generator)
-      - API_KEY=your-extension-api-key
-      # Optional: Configure download settings
-      - MAX_CONCURRENT_DOWNLOADS=2
-      - DOWNLOAD_QUALITY=best
-    volumes:
-      # Update these paths to match your Synology setup
-      # This is where downloaded videos will be stored
-      - /volume1/docker/youtubetojellyfin/downloads:/downloads
-      # Optional: Mount a config directory for persistent settings
-      - /volume1/docker/youtubetojellyfin/config:/app/config
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
-      - "3001:3001"  # The port that the extension will connect to
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+      - API_KEY=${API_KEY:-changeme}
+      - MAX_CONCURRENT_DOWNLOADS=2
+      - DEFAULT_VIDEO_QUALITY=best
+      - DEFAULT_VIDEO_TYPE=movie
+    volumes:
+      - ./config:/config
+      - ./downloads:/downloads
+      - ./logs:/app/logs
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 5s 
+      start_period: 10s 

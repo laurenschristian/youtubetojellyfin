@@ -9,7 +9,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const saveButton = document.getElementById('saveButton');
   const resetButton = document.getElementById('resetButton');
   const testConnectionButton = document.getElementById('testConnection');
-  const connectionIndicator = document.getElementById('connectionIndicator');
   const connectionStatus = document.getElementById('connectionStatus');
   const statusDiv = document.getElementById('status');
 
@@ -29,69 +28,99 @@ document.addEventListener('DOMContentLoaded', () => {
       const settings = await chrome.storage.sync.get(DEFAULT_SETTINGS);
       console.log('Settings loaded:', { ...settings, apiKey: '[REDACTED]' });
       
-      document.getElementById('apiUrl').value = settings.apiUrl;
-      document.getElementById('apiKey').value = settings.apiKey;
-      document.getElementById('defaultQuality').value = settings.defaultQuality;
-      document.getElementById('defaultType').value = settings.defaultType;
-      document.getElementById('autoDownload').checked = settings.autoDownload;
+      apiUrlInput.value = settings.apiUrl;
+      apiKeyInput.value = settings.apiKey;
+      defaultQualitySelect.value = settings.defaultQuality;
+      defaultTypeSelect.value = settings.defaultType;
+      autoDownloadCheckbox.checked = settings.autoDownload;
       
       // Test connection on load
-      await updateConnectionStatus();
+      await testConnection();
     } catch (error) {
       console.error('Error loading settings:', error);
       showStatus('Error loading settings', true);
     }
   };
 
-  // Update connection status indicator
-  const updateConnectionStatus = async () => {
-    const apiUrl = document.getElementById('apiUrl').value;
-    const apiKey = document.getElementById('apiKey').value;
-    const statusElement = document.getElementById('connectionStatus');
-    
-    statusElement.textContent = 'Testing connection...';
-    statusElement.className = 'status pending';
-    
-    const result = await testConnection(apiUrl, apiKey);
-    
-    statusElement.textContent = result.message;
-    statusElement.className = `status ${result.success ? 'success' : 'error'}`;
-  };
+  /**
+   * Available API Endpoints:
+   * - GET /health or /api/health - Health check (no auth required)
+   * - POST /api/videos - Start video download
+   * - GET /api/videos/:id - Get video download status
+   * - GET /api/settings - Get server settings
+   * - PUT /api/settings - Update server settings
+   */
 
   // Test API connection
-  const testConnection = async (url, apiKey) => {
-    console.log('Testing API connection...', { url });
+  const testConnection = async () => {
+    const url = apiUrlInput.value.trim();
+    const apiKey = apiKeyInput.value.trim();
     
-    if (!apiKey) {
-      return { success: false, message: 'API key is required' };
+    if (!url || !apiKey) {
+      updateConnectionStatus(false, 'API URL and key are required');
+      return false;
     }
+
+    updateConnectionStatus(null, 'Testing connection...');
     
     try {
-      const response = await fetch(url, {
-        method: 'GET',
+      // First try /health endpoint (no auth required)
+      const healthResponse = await fetch(`${url}/health`);
+      if (!healthResponse.ok) {
+        throw new Error('Health check failed');
+      }
+
+      // Then test authenticated endpoint
+      const response = await fetch(`${url}/api/auth/validate`, {
+        method: 'POST',
         headers: {
           'X-API-Key': apiKey,
           'Content-Type': 'application/json'
-        },
-        mode: 'cors'
+        }
       });
       
       const data = await response.json();
-      console.log('API response:', data);
       
       if (!response.ok) {
         throw new Error(data.message || `HTTP error! status: ${response.status}`);
       }
       
-      return { success: true, message: 'Connection successful' };
+      updateConnectionStatus(true, 'Connection successful');
+      return true;
     } catch (error) {
       console.error('Connection test failed:', error);
-      return { 
-        success: false, 
-        message: error.message === 'Invalid or missing API key' 
-          ? 'Invalid API key' 
-          : `Connection failed: ${error.message}`
-      };
+      const message = error.message === 'Invalid or missing API key' 
+        ? 'Invalid API key' 
+        : `Connection failed: ${error.message}`;
+      updateConnectionStatus(false, message);
+      return false;
+    }
+  };
+
+  // Update connection status UI
+  const updateConnectionStatus = (success, message) => {
+    const statusContainer = document.querySelector('.connection-status');
+    const indicatorEl = document.getElementById('connectionIndicator');
+    const statusTextEl = document.getElementById('statusText');
+    
+    if (!statusContainer || !indicatorEl || !statusTextEl) {
+      console.error('Connection status elements not found');
+      return;
+    }
+
+    if (success === null) {
+      // Testing state
+      statusContainer.className = 'connection-status testing';
+      indicatorEl.className = 'indicator testing';
+      statusTextEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24"><path d="M12 4V2M12 22v-2M6.34 6.34L4.93 4.93M19.07 19.07l-1.41-1.41M4 12H2M22 12h-2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"></path></svg> ${message}`;
+    } else if (success) {
+      statusContainer.className = 'connection-status success';
+      indicatorEl.className = 'indicator connected';
+      statusTextEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg> ${message}`;
+    } else {
+      statusContainer.className = 'connection-status error';
+      indicatorEl.className = 'indicator disconnected';
+      statusTextEl.innerHTML = `<svg class="status-icon" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg> ${message}`;
     }
   };
 
@@ -99,19 +128,22 @@ document.addEventListener('DOMContentLoaded', () => {
   const saveSettings = async () => {
     console.log('Saving settings...');
     const settings = {
-      apiUrl: document.getElementById('apiUrl').value.trim(),
-      apiKey: document.getElementById('apiKey').value.trim(),
-      defaultQuality: document.getElementById('defaultQuality').value,
-      defaultType: document.getElementById('defaultType').value,
-      autoDownload: document.getElementById('autoDownload').checked
+      apiUrl: apiUrlInput.value.trim(),
+      apiKey: apiKeyInput.value.trim(),
+      defaultQuality: defaultQualitySelect.value,
+      defaultType: defaultTypeSelect.value,
+      autoDownload: autoDownloadCheckbox.checked
     };
     
     try {
       await chrome.storage.sync.set(settings);
       console.log('Settings saved successfully');
       
-      const connectionResult = await updateConnectionStatus();
-      showStatus(connectionResult ? 'Settings saved and connection verified' : 'Settings saved but connection failed', !connectionResult);
+      const connectionSuccess = await testConnection();
+      showStatus(
+        connectionSuccess ? 'Settings saved successfully' : 'Settings saved but connection failed',
+        !connectionSuccess
+      );
     } catch (error) {
       console.error('Error saving settings:', error);
       showStatus('Error saving settings', true);
@@ -120,110 +152,56 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Reset settings
   const resetSettings = async () => {
-    console.log('Resetting settings to defaults...');
     if (!confirm('Are you sure you want to reset all settings to defaults?')) {
       return;
     }
 
     try {
       await chrome.storage.sync.set(DEFAULT_SETTINGS);
-      loadSettings();
+      await loadSettings();
       showStatus('Settings reset to defaults');
     } catch (error) {
-      showStatus('Error resetting settings: ' + error.message, true);
+      showStatus('Error resetting settings', true);
     }
   };
 
   // Show status message
   const showStatus = (message, isError = false) => {
-    console.log(`Status message: ${message} (${isError ? 'error' : 'success'})`);
     const statusElement = document.getElementById('status');
     statusElement.textContent = message;
     statusElement.className = `status ${isError ? 'error' : 'success'}`;
-    statusElement.style.display = 'block';
+    statusElement.style.opacity = '1';
     
     if (!isError) {
       setTimeout(() => {
-        statusElement.style.display = 'none';
-      }, 5000);
-    }
-  };
-
-  // Load download history
-  const loadHistory = async () => {
-    try {
-      const historyContainer = document.getElementById('history');
-      if (!historyContainer) {
-        console.warn('History container not found');
-        return;
-      }
-
-      const { history = [] } = await chrome.storage.local.get('history');
-      historyContainer.innerHTML = '';
-
-      if (!Array.isArray(history)) {
-        console.warn('Invalid history format');
-        return;
-      }
-
-      history.forEach(item => {
-        if (!item) return;
-        
-        const historyItem = document.createElement('div');
-        historyItem.className = 'history-item';
-        
-        const title = document.createElement('div');
-        title.className = 'title';
-        title.textContent = item.title || 'Untitled';
-        
-        const meta = document.createElement('div');
-        meta.className = 'meta';
-        meta.textContent = `Downloaded on ${new Date(item.timestamp || Date.now()).toLocaleString()}`;
-        
-        const progress = document.createElement('div');
-        progress.className = 'progress-bar';
-        const fill = document.createElement('div');
-        fill.className = 'fill';
-        fill.style.width = `${item.progress || 0}%`;
-        progress.appendChild(fill);
-
-        historyItem.appendChild(title);
-        historyItem.appendChild(meta);
-        historyItem.appendChild(progress);
-        
-        if (item.status === 'error' && item.error) {
-          const error = document.createElement('div');
-          error.className = 'error';
-          error.textContent = item.error;
-          historyItem.appendChild(error);
-        }
-
-        historyContainer.appendChild(historyItem);
-      });
-    } catch (error) {
-      console.error('Failed to load history:', error);
-      showStatus('Failed to load download history', true);
+        statusElement.style.opacity = '0';
+      }, 3000);
     }
   };
 
   // Event listeners
   saveButton.addEventListener('click', saveSettings);
   resetButton.addEventListener('click', resetSettings);
-  testConnectionButton.addEventListener('click', async () => {
-    const url = document.getElementById('apiUrl').value.trim();
-    const apiKey = document.getElementById('apiKey').value.trim();
-    const result = await updateConnectionStatus();
-    showStatus(result ? 'Connection test successful' : 'Connection test failed', !result);
-  });
+  testConnectionButton.addEventListener('click', testConnection);
+
+  // Input validation and live connection status
+  const debounce = (fn, delay) => {
+    let timeoutId;
+    return (...args) => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => fn(...args), delay);
+    };
+  };
+
+  const validateInputs = debounce(async () => {
+    if (apiUrlInput.value.trim() && apiKeyInput.value.trim()) {
+      await testConnection();
+    }
+  }, 500);
+
+  apiUrlInput.addEventListener('input', validateInputs);
+  apiKeyInput.addEventListener('input', validateInputs);
 
   // Load settings on page load
   loadSettings();
-  loadHistory();
-
-  // Listen for history updates
-  chrome.storage.onChanged.addListener((changes, namespace) => {
-    if (namespace === 'local' && changes.history) {
-      loadHistory();
-    }
-  });
 }); 

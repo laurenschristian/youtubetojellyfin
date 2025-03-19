@@ -1,53 +1,32 @@
-FROM python:3.11-alpine
+FROM node:20-slim
 
-# Build arguments
-ARG VERSION
-LABEL org.opencontainers.image.version=${VERSION}
-
-# Install Node.js and other dependencies
-RUN apk add --no-cache \
-    nodejs \
-    npm \
-    ffmpeg \
-    git \
-    wget && \
-    npm install -g npm@latest && \
-    python3 -m pip install --no-cache-dir yt-dlp
-
-# Create app directory
 WORKDIR /app
 
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    ffmpeg \
+    atomicparsley \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy package files
-COPY package*.json ./
+COPY api/package*.json ./
 
-# Install app dependencies
-RUN npm ci --only=production
+# Install dependencies
+RUN npm install
 
-# Copy app source
-COPY . .
+# Copy source code
+COPY api/ .
 
-# Create downloads directory with correct permissions
-RUN mkdir -p /downloads && \
-    adduser -D -h /app appuser && \
-    chown -R appuser:appuser /downloads /app
-
-# Set environment variables
-ENV NODE_ENV=production \
-    OUTPUT_DIR=/downloads \
-    VERSION=${VERSION}
+# Create config directory
+RUN mkdir -p /config && chown -R node:node /config
 
 # Switch to non-root user
-USER appuser
-
-# Create volume mount point
-VOLUME /downloads
+USER node
 
 # Expose API port
 EXPOSE 3001
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:3001/api/health || exit 1
-
-# Start the server
-CMD ["npm", "start"] 
+# Start the application
+CMD ["npm", "run", "dev"] 

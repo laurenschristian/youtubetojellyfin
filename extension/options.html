@@ -24,6 +24,9 @@
       --input: #e4e4e7;
       --ring: #18181b;
       --radius: 0.5rem;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --error: #ef4444;
     }
 
     .dark {
@@ -72,6 +75,8 @@
       align-items: center;
       gap: 1rem;
       margin-bottom: 2rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border);
     }
 
     .logo {
@@ -96,25 +101,32 @@
       border-radius: var(--radius);
       padding: 1.5rem;
       margin-bottom: 1.5rem;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
     }
 
     .card-header {
-      margin-bottom: 1rem;
+      margin-bottom: 1.5rem;
     }
 
     .card-title {
       font-size: 1.125rem;
       font-weight: 600;
       margin-bottom: 0.25rem;
+      color: var(--foreground);
     }
 
     .card-description {
       color: var(--muted-foreground);
       font-size: 0.875rem;
+      line-height: 1.4;
     }
 
     .form-group {
-      margin-bottom: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .form-group:last-child {
+      margin-bottom: 0;
     }
 
     .form-group label {
@@ -122,55 +134,119 @@
       font-size: 0.875rem;
       font-weight: 500;
       margin-bottom: 0.5rem;
+      color: var(--foreground);
     }
 
     .input {
       width: 100%;
-      padding: 0.5rem;
+      padding: 0.625rem;
       font-size: 0.875rem;
       border: 1px solid var(--input);
       border-radius: var(--radius);
       background-color: transparent;
       color: var(--foreground);
-      transition: border-color 0.2s;
+      transition: all 0.2s;
     }
 
     .input:focus {
       outline: none;
       border-color: var(--ring);
-      box-shadow: 0 0 0 1px var(--ring);
+      box-shadow: 0 0 0 2px rgba(24, 24, 27, 0.1);
+    }
+
+    .input:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
     }
 
     .connection-status {
       display: flex;
       align-items: center;
-      gap: 0.5rem;
-      margin-top: 0.5rem;
-      padding: 0.5rem;
+      gap: 0.75rem;
+      margin-top: 0.75rem;
+      padding: 0.75rem;
       border-radius: var(--radius);
       background-color: var(--secondary);
+      transition: all 0.2s;
+    }
+
+    .connection-status.success {
+      background-color: rgba(34, 197, 94, 0.1);
+      color: var(--success);
+    }
+
+    .connection-status.error {
+      background-color: rgba(239, 68, 68, 0.1);
+      color: var(--error);
+    }
+
+    .connection-status.testing {
+      background-color: rgba(245, 158, 11, 0.1);
+      color: var(--warning);
+    }
+
+    .status-icon {
+      width: 16px;
+      height: 16px;
+      margin-right: 0.5rem;
+      vertical-align: middle;
+    }
+
+    .status-text {
+      display: flex;
+      align-items: center;
+      font-size: 0.875rem;
+      font-weight: 500;
+      line-height: 1;
     }
 
     .indicator {
-      width: 8px;
-      height: 8px;
+      width: 10px;
+      height: 10px;
       border-radius: 50%;
+      flex-shrink: 0;
+      transition: all 0.2s;
     }
 
-    .indicator.connected { background-color: #22c55e; }
-    .indicator.disconnected { background-color: #ef4444; }
-    .indicator.testing { background-color: #f59e0b; }
+    .indicator.connected {
+      background-color: var(--success);
+      box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.2);
+    }
+
+    .indicator.disconnected {
+      background-color: var(--error);
+      box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+    }
+
+    .indicator.testing {
+      background-color: var(--warning);
+      box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.1); opacity: 0.8; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    .button-group {
+      display: flex;
+      gap: 0.75rem;
+      margin-top: 1.5rem;
+    }
 
     .button {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      padding: 0.5rem 1rem;
+      padding: 0.625rem 1rem;
       font-size: 0.875rem;
       font-weight: 500;
       border-radius: var(--radius);
       transition: all 0.2s;
       cursor: pointer;
+      min-width: 100px;
     }
 
     .button-primary {
@@ -187,11 +263,17 @@
 
     .button:hover {
       opacity: 0.9;
+      transform: translateY(-1px);
+    }
+
+    .button:active {
+      transform: translateY(0);
     }
 
     .button:disabled {
       opacity: 0.5;
       cursor: not-allowed;
+      transform: none;
     }
 
     .status {
@@ -199,16 +281,18 @@
       padding: 0.75rem;
       border-radius: var(--radius);
       font-size: 0.875rem;
+      transition: opacity 0.3s;
+      opacity: 0;
     }
 
     .status.success {
-      background-color: #dcfce7;
-      color: #166534;
+      background-color: rgba(34, 197, 94, 0.1);
+      color: var(--success);
     }
 
     .status.error {
-      background-color: #fee2e2;
-      color: #991b1b;
+      background-color: rgba(239, 68, 68, 0.1);
+      color: var(--error);
     }
 
     .help-text {
@@ -259,7 +343,7 @@
       <img src="icons/icon48.png" alt="Logo" class="logo">
       <div class="header-text">
         <h1>YouTube to Jellyfin</h1>
-        <div class="subtitle">Configure your connection settings</div>
+        <p class="subtitle">Configure your connection settings</p>
       </div>
     </header>
 
@@ -271,19 +355,19 @@
 
       <div class="form-group">
         <label for="apiUrl">API Server URL</label>
-        <input type="text" id="apiUrl" class="input" placeholder="http://localhost:3001/api">
+        <input type="text" id="apiUrl" class="input" placeholder="http://localhost:3001">
         <p class="help-text">The URL where your API server is running</p>
-        <div class="connection-status">
-          <div class="indicator disconnected" id="connectionIndicator"></div>
-          <span id="connectionStatus">Not connected</span>
-          <button class="button button-secondary" id="testConnection">Test Connection</button>
-        </div>
       </div>
 
       <div class="form-group">
         <label for="apiKey">API Key</label>
-        <input type="password" id="apiKey" class="input">
+        <input type="password" id="apiKey" class="input" placeholder="Enter your API key">
         <p class="help-text">The authentication key for accessing the API</p>
+      </div>
+
+      <div class="connection-status">
+        <div id="connectionIndicator" class="indicator"></div>
+        <span id="statusText" class="status-text">Not connected</span>
       </div>
     </div>
 
@@ -307,7 +391,7 @@
         <label for="defaultType">Default Content Type</label>
         <select id="defaultType" class="input">
           <option value="movie">Movie</option>
-          <option value="show">TV Show</option>
+          <option value="episode">TV Episode</option>
         </select>
       </div>
 
@@ -320,12 +404,12 @@
       </div>
     </div>
 
-    <div class="button-group" style="display: flex; gap: 0.5rem;">
+    <div class="button-group">
       <button id="saveButton" class="button button-primary">Save Settings</button>
       <button id="resetButton" class="button button-secondary">Reset to Defaults</button>
     </div>
 
-    <div id="status" class="status" style="display: none;"></div>
+    <div id="status" class="status"></div>
 
     <div class="history-container">
       <div class="card-header">
