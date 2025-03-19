@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  api:
+    image: ${DOCKER_REGISTRY:-ghcr.io}/yourusername/youtubetojellyfin:latest
+    ports:
+      - "${PORT:-3001}:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - API_KEY=${API_KEY}
+      - MAX_CONCURRENT_DOWNLOADS=2
+      - DEFAULT_VIDEO_QUALITY=best
+      - DEFAULT_VIDEO_TYPE=movie
+      - DOWNLOAD_DIR=/downloads
+      - COMPLETED_DIR=/completed
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - CORS_ORIGIN=${CORS_ORIGIN:-*}
+    volumes:
+      - config:/config
+      - /volume1/media/video/youtube/downloads:/downloads
+      - /volume1/media/video/youtube/completed:/completed
+      - logs:/app/logs
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  config:
+    name: youtubetojellyfin_config
+  logs:
+    name: youtubetojellyfin_logs 
