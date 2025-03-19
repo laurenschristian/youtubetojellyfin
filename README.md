@@ -1,93 +1,147 @@
-# YouTube to Jellyfin Integration
+# YouTube to Jellyfin Downloader
 
-A secure system for downloading YouTube videos directly to your Jellyfin media server running on a Synology NAS.
+A service that downloads YouTube videos and organizes them for Jellyfin media server.
 
 ## Features
 
-- Chrome extension for easy video saving from YouTube
-- Secure backend API with JWT authentication
-- Automatic video download and transcoding
-- Direct integration with Jellyfin media libraries
-- Cloudflare-ready for secure remote access
-- Docker-based deployment
+- Download YouTube videos directly to your Jellyfin media server
+- Organize downloads as movies or TV shows
+- Chrome extension for easy downloading
+- API key authentication
+- Progress tracking and download history
+- Detailed logging for monitoring and debugging
 
-## Prerequisites
+## Production Deployment Guide
 
-- Synology NAS with Docker installed
-- Jellyfin Media Server
-- Node.js 20+ (for development)
-- Chrome/Chromium-based browser
-- ffmpeg
-- yt-dlp
+### Prerequisites
 
-## Installation
+- Docker and Docker Compose installed on your server
+- Git for cloning the repository
+- A domain name (optional but recommended)
 
-### Backend API
+### Deployment Steps
 
-1. Clone this repository to your Synology NAS
-2. Copy `.env.example` to `.env` and configure your settings
-3. Build and run using Docker Compose:
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/youtubetojellyfin.git
+   cd youtubetojellyfin
+   ```
 
-```bash
-docker-compose up -d
-```
+2. Create production environment file:
+   ```bash
+   cp .env.production .env
+   ```
 
-### Chrome Extension
+3. Edit the `.env` file with your production settings:
+   - Generate a secure API key
+   - Set your Chrome extension ID in CORS_ORIGIN
+   - Configure media paths
+   - Adjust logging level if needed
 
-1. Open Chrome and navigate to `chrome://extensions`
-2. Enable "Developer mode"
-3. Click "Load unpacked" and select the `extension` directory
-4. Configure the extension with your API endpoint
+4. Build and start the container:
+   ```bash
+   docker-compose up -d --build
+   ```
 
-## Configuration
+5. Monitor the logs:
+   ```bash
+   docker-compose logs -f
+   ```
+
+### Directory Structure
+
+- `/config` - Configuration files
+- `/downloads` - Temporary download directory
+- `/completed` - Completed downloads
+- `/logs` - Application logs
+  - `combined.log` - All logs
+  - `error.log` - Error logs only
+
+### Logging
+
+The application uses Winston for logging with the following levels:
+- `error` - Error messages
+- `warn` - Warning messages
+- `info` - General information
+- `debug` - Detailed debugging information
+
+Logs are written to:
+- Console (colored output)
+- `/app/logs/combined.log` (all levels)
+- `/app/logs/error.log` (error level only)
+
+Docker container logs are also configured with:
+- Max size: 10MB per file
+- Max files: 3 (rotation)
+
+### Health Checks
+
+The application provides two health check endpoints:
+- `/health` - Basic health check
+- `/api/health` - API health check with additional information
 
 ### Environment Variables
 
-- `JWT_SECRET`: Secret key for JWT token generation
-- `CORS_ORIGIN`: Chrome extension ID for CORS
-- `MEDIA_PATH`: Base path for media storage
-- `API_RATE_LIMIT`: Request limit per window
+Key environment variables for production:
+- `NODE_ENV` - Set to "production"
+- `API_KEY` - Your secure API key
+- `CORS_ORIGIN` - Your Chrome extension ID
+- `LOG_LEVEL` - Logging level (default: "info")
 
-### Media Paths
+### Monitoring
 
-Configure your Jellyfin media paths in the `docker-compose.yml` file:
+1. Check application status:
+   ```bash
+   docker-compose ps
+   ```
 
-```yaml
-volumes:
-  - /volume1/media:/media
-```
+2. View logs:
+   ```bash
+   # All logs
+   docker-compose logs -f
 
-## Security
-- All API endpoints are HTTPS-only
-- JWT-based authentication
-- Rate limiting enabled
-- Input validation on all endpoints
-- Minimal container privileges
+   # API service logs only
+   docker-compose logs -f api
 
-## Development
+   # Last 100 lines
+   docker-compose logs --tail=100 -f
+   ```
 
-1. Install dependencies:
-```bash
-npm install
-```
+3. Check the health endpoint:
+   ```bash
+   curl http://localhost:3001/api/health
+   ```
 
-2. Start development server:
-```bash
-npm run dev
-```
+### Troubleshooting
 
-3. Load the extension in Chrome developer mode
+1. If the container fails to start:
+   ```bash
+   docker-compose logs api
+   ```
 
-## Contributing
+2. Check error logs:
+   ```bash
+   tail -f logs/error.log
+   ```
 
-1. Fork the repository
-2. Create a feature branch
-3. Submit a pull request
+3. Verify permissions:
+   ```bash
+   ls -la downloads/ completed/ logs/
+   ```
 
-## License
+4. Restart the service:
+   ```bash
+   docker-compose restart api
+   ```
 
-MIT License
+### Security Considerations
+
+1. Always use a strong API key
+2. Keep your `.env` file secure
+3. Regularly update dependencies
+4. Monitor logs for suspicious activity
+5. Use HTTPS in production
 
 ## Support
 
-Create an issue in the GitHub repository for support requests. 
+For issues and feature requests, please create an issue in the GitHub repository. 

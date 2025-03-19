@@ -3,6 +3,8 @@ const helmet = require('helmet');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
 const { createLogger, format, transports } = require('winston');
+const morgan = require('morgan');
+const { authenticate } = require('./middleware/auth');
 
 // Initialize logger
 const logger = createLogger({
@@ -117,4 +119,7 @@ app.use('/api/settings', settingsRoutes);
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   logger.info(`Server running on port ${PORT}`);
-}); 
+});
+
+// Export logger for use in other modules
+module.exports = { logger }; 

@@ -206,7 +206,7 @@ async function startDownload() {
     const tab = await chrome.tabs.query({ active: true, currentWindow: true });
     const videoTitle = tab[0]?.title?.replace(' - YouTube', '') || 'Unknown Title';
     
-    const response = await fetch(`${currentSettings.apiUrl}/videos`, {
+    const response = await fetch(`${currentSettings.apiUrl}/api/videos`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -245,51 +245,65 @@ async function startDownload() {
   }
 }
 
+async function updateHistoryItemStatus(downloadId, status) {
+  console.log('Updating history item status:', { downloadId, status });
+  try {
+    const { downloadHistory = [] } = await chrome.storage.local.get('downloadHistory');
+    const index = downloadHistory.findIndex(item => item.id === downloadId);
+    
+    if (index !== -1) {
+      downloadHistory[index].status = status;
+      await chrome.storage.local.set({ downloadHistory });
+      // Refresh the history display
+      await loadHistory();
+    }
+  } catch (error) {
+    console.error('Error updating history item status:', error);
+  }
+}
+
 async function pollDownloadProgress(downloadId) {
   console.log('Starting progress polling for:', downloadId);
   const pollInterval = setInterval(async () => {
     try {
-      const response = await fetch(`${currentSettings.apiUrl}/videos/${downloadId}`, {
+      const response = await fetch(`${currentSettings.apiUrl}/api/videos/${downloadId}`, {
         headers: {
           'X-API-Key': currentSettings.apiKey
         }
       });
       
-      const data = await response.json();
-      console.log('Progress update:', data);
+      if (!response.ok) {
+        throw new Error(`Failed to get download status: ${response.status}`);
+      }
       
-      if (response.ok && data.progress !== undefined) {
+      const data = await response.json();
+      console.log('Download status:', data);
+      
+      if (data.progress) {
         updateProgress(data.progress);
-        
-        if (data.status === 'completed') {
-          console.log('Download completed');
-          showStatus('Download completed successfully');
-          clearInterval(pollInterval);
-          setButtonLoading(false);
-          
-          // Update history with completed status and final title if available
-          if (data.title) {
-            chrome.storage.local.get('downloadHistory', ({ downloadHistory = [] }) => {
-              const index = downloadHistory.findIndex(item => item.id === downloadId);
-              if (index !== -1) {
-                downloadHistory[index].status = 'completed';
-                downloadHistory[index].title = data.title;
-                chrome.storage.local.set({ downloadHistory });
-                loadHistory();
-              }
-            });
-          }
-        } else if (data.status === 'error') {
-          throw new Error(data.error || 'Download failed');
-        }
+      }
+      
+      if (data.status === 'completed') {
+        clearInterval(pollInterval);
+        setButtonLoading(false);
+        updateProgress(100);
+        // Update history item status
+        await updateHistoryItemStatus(downloadId, 'completed');
+        showStatus('Download completed successfully');
+      } else if (data.status === 'error') {
+        clearInterval(pollInterval);
+        setButtonLoading(false);
+        showStatus(`Download failed: ${data.error}`, true);
+        // Update history item status
+        await updateHistoryItemStatus(downloadId, 'error');
       }
     } catch (error) {
-      console.error('Progress polling error:', error);
-      showStatus(error.message, true);
+      console.error('Error polling download status:', error);
       clearInterval(pollInterval);
       setButtonLoading(false);
+      showStatus('Failed to get download status', true);
     }
-  }, 2000);
+  }, 2000); // Poll every 2 seconds
 }
 
 async function loadHistory() {
