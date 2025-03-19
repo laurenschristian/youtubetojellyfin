@@ -66,7 +66,25 @@ app.options('*', (req, res) => {
   res.status(204).send();
 });
 
-// Health check endpoint
+// Base route for connection testing
+app.get('/', (req, res) => {
+  // Check for API key
+  const apiKey = req.headers['x-api-key'];
+  if (!apiKey || apiKey !== process.env.API_KEY) {
+    return res.status(401).json({ 
+      error: 'Unauthorized',
+      message: 'Invalid or missing API key'
+    });
+  }
+  
+  res.json({ 
+    status: 'ok',
+    message: 'API is running',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Health check endpoint (no auth required)
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });

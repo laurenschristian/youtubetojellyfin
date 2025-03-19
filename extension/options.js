@@ -62,6 +62,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const testConnection = async (url, apiKey) => {
     console.log('Testing API connection...', { url });
     
+    if (!apiKey) {
+      return { success: false, message: 'API key is required' };
+    }
+    
     try {
       const response = await fetch(url, {
         method: 'GET',
@@ -72,17 +76,22 @@ document.addEventListener('DOMContentLoaded', () => {
         mode: 'cors'
       });
       
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
       const data = await response.json();
-      console.log('API health check response:', data);
+      console.log('API response:', data);
+      
+      if (!response.ok) {
+        throw new Error(data.message || `HTTP error! status: ${response.status}`);
+      }
       
       return { success: true, message: 'Connection successful' };
     } catch (error) {
       console.error('Connection test failed:', error);
-      return { success: false, message: `Connection failed: ${error.message}` };
+      return { 
+        success: false, 
+        message: error.message === 'Invalid or missing API key' 
+          ? 'Invalid API key' 
+          : `Connection failed: ${error.message}`
+      };
     }
   };
 
