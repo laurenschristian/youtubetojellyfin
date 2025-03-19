@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Default settings
   const DEFAULT_SETTINGS = {
-    apiUrl: 'http://localhost:3001/api',
+    apiUrl: 'http://localhost:3001',
     apiKey: '',
     defaultQuality: 'best',
     defaultType: 'movie',
@@ -63,7 +63,7 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('Testing API connection...', { url });
     
     try {
-      const response = await fetch(`${url}/health`, {
+      const response = await fetch(url, {
         method: 'GET',
         headers: {
           'X-API-Key': apiKey,

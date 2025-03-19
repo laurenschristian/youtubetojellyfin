@@ -10,7 +10,8 @@
   ],
   "host_permissions": [
     "http://localhost:3001/*",
-    "http://10.0.4.70:3001/*"
+    "http://10.0.4.70:3001/*",
+    "https://youtube.bondevelopers.com/api/videos"
   ],
   "action": {
     "default_popup": "popup.html",
