@@ -10,11 +10,46 @@ const EventEmitter = require('events');
 global.eventEmitter = new EventEmitter();
 global.eventEmitter.setMaxListeners(100); // Allow many clients
 
+// Try to determine the best base directory for our data
+const getBaseDir = () => {
+  const possibleDirs = [
+    process.env.DATA_BASE_DIR,
+    process.cwd(),
+    '/tmp/youtubetojellyfin'
+  ];
+
+  for (const dir of possibleDirs) {
+    if (!dir) continue;
+    
+    try {
+      // Try to create the directory with write permissions
+      if (!fsSync.existsSync(dir)) {
+        fsSync.mkdirSync(dir, { recursive: true, mode: 0o777 });
+      } else {
+        // Test write permissions
+        const testFile = path.join(dir, '.write-test');
+        fsSync.writeFileSync(testFile, 'test');
+        fsSync.unlinkSync(testFile);
+      }
+      return dir;
+    } catch (error) {
+      console.warn(`Directory ${dir} is not writable, trying next option...`);
+      continue;
+    }
+  }
+  
+  throw new Error('No writable directory found for data storage');
+};
+
+// Set up base directory and derived paths
+const BASE_DIR = getBaseDir();
+console.log(`Using base directory: ${BASE_DIR}`);
+
 // Constants and directory setup
-const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
-const LOG_DIR = process.env.LOG_DIR || path.join(process.cwd(), 'logs');
-const DOWNLOAD_DIR = process.env.DOWNLOAD_DIR || path.join(process.cwd(), 'downloads');
-const COMPLETED_DIR = process.env.COMPLETED_DIR || path.join(process.cwd(), 'media');
+const DATA_DIR = process.env.DATA_DIR || path.join(BASE_DIR, 'data');
+const LOG_DIR = process.env.LOG_DIR || path.join(BASE_DIR, 'logs');
+const DOWNLOAD_DIR = process.env.DOWNLOAD_DIR || path.join(BASE_DIR, 'downloads');
+const COMPLETED_DIR = process.env.COMPLETED_DIR || path.join(BASE_DIR, 'media');
 
 // Ensure required directories exist
 const ensureDirectories = () => {
@@ -23,33 +58,59 @@ const ensureDirectories = () => {
   for (const dir of dirs) {
     if (!fsSync.existsSync(dir)) {
       try {
-        fsSync.mkdirSync(dir, { recursive: true, mode: 0o755 });
+        fsSync.mkdirSync(dir, { recursive: true, mode: 0o777 });
         console.log(`Created directory: ${dir}`);
       } catch (error) {
         console.error(`Failed to create directory ${dir}:`, error);
-        process.exit(1);
+        // Instead of exiting, try to create in /tmp as a last resort
+        const tmpDir = path.join('/tmp', path.basename(dir));
+        try {
+          fsSync.mkdirSync(tmpDir, { recursive: true, mode: 0o777 });
+          console.log(`Created fallback directory: ${tmpDir}`);
+          // Update the corresponding constant to use the tmp directory
+          switch(path.basename(dir)) {
+            case 'data': global.DATA_DIR = tmpDir; break;
+            case 'logs': global.LOG_DIR = tmpDir; break;
+            case 'downloads': global.DOWNLOAD_DIR = tmpDir; break;
+            case 'media': global.COMPLETED_DIR = tmpDir; break;
+          }
+        } catch (fallbackError) {
+          console.error('Failed to create fallback directory:', fallbackError);
+          process.exit(1);
+        }
       }
     }
   }
 };
 
 // Create directories before initializing
-ensureDirectories();
+try {
+  ensureDirectories();
+} catch (error) {
+  console.error('Fatal: Could not create required directories:', error);
+  process.exit(1);
+}
 
-// Initialize logger
+// Initialize logger with fallback to console only if file transport fails
 const logger = createLogger({
   format: format.combine(
     format.timestamp(),
     format.json()
   ),
   transports: [
-    new transports.Console(),
-    new transports.File({ 
-      filename: path.join(LOG_DIR, 'video-service.log'),
-      options: { flags: 'a' }
-    })
+    new transports.Console()
   ]
 });
+
+// Try to add file transport
+try {
+  logger.add(new transports.File({ 
+    filename: path.join(global.LOG_DIR || LOG_DIR, 'video-service.log'),
+    options: { flags: 'a' }
+  }));
+} catch (error) {
+  console.warn('Could not initialize file logging, falling back to console only:', error);
+}
 
 // Load persisted downloads on startup
 try {
@@ -147,27 +208,35 @@ const updateStatus = async (id, status, progress = null, error = null) => {
 const validateEnvironment = () => {
   // Define required directories with defaults
   const dirs = {
-    DOWNLOAD_DIR: DOWNLOAD_DIR,
-    COMPLETED_DIR: COMPLETED_DIR,
-    LOG_DIR: LOG_DIR // Use the already defined LOG_DIR
+    DOWNLOAD_DIR: global.DOWNLOAD_DIR || DOWNLOAD_DIR,
+    COMPLETED_DIR: global.COMPLETED_DIR || COMPLETED_DIR,
+    LOG_DIR: global.LOG_DIR || LOG_DIR
   };
 
   // Ensure all directories exist with proper permissions
   for (const [key, dir] of Object.entries(dirs)) {
     try {
       if (!fsSync.existsSync(dir)) {
-        fsSync.mkdirSync(dir, { recursive: true, mode: 0o755 });
+        fsSync.mkdirSync(dir, { recursive: true, mode: 0o777 });
         logger.info(`Created directory: ${dir}`);
       }
       // Update environment variable with resolved path
       process.env[key] = dir;
     } catch (error) {
       logger.error(`Failed to create/access ${key} directory:`, error);
-      throw new Error(`Failed to create/access ${key} directory: ${error.message}`);
+      // Try to use /tmp as fallback
+      const tmpDir = path.join('/tmp', path.basename(dir));
+      try {
+        fsSync.mkdirSync(tmpDir, { recursive: true, mode: 0o777 });
+        logger.info(`Created fallback directory: ${tmpDir}`);
+        process.env[key] = tmpDir;
+      } catch (fallbackError) {
+        throw new Error(`Failed to create/access ${key} directory and fallback: ${fallbackError.message}`);
+      }
     }
   }
 
-  logger.info('Environment validation completed successfully', { dirs });
+  logger.info('Environment validation completed successfully', { dirs: process.env });
 };
 
 // Check available disk space
