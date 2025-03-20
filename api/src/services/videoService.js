@@ -3,6 +3,11 @@ const path = require('path');
 const fs = require('fs').promises;
 const { createLogger, format, transports } = require('winston');
 const { logFileAccess } = require('../middleware/audit');
+const EventEmitter = require('events');
+
+// Initialize event emitter for status updates
+global.eventEmitter = new EventEmitter();
+global.eventEmitter.setMaxListeners(100); // Allow many clients
 
 // Initialize logger
 const logger = createLogger({
@@ -25,17 +30,53 @@ const MAX_CONCURRENT_DOWNLOADS = parseInt(process.env.MAX_CONCURRENT_DOWNLOADS, 
 const MAX_FILE_SIZE_GB = parseInt(process.env.MAX_FILE_SIZE_GB, 10) || 10;
 const MAX_TITLE_LENGTH = parseInt(process.env.MAX_TITLE_LENGTH, 10) || 200;
 const ALLOWED_VIDEO_FORMATS = (process.env.ALLOWED_VIDEO_FORMATS || 'mp4,mkv').split(',');
+const STATUS_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
 
-// Download tracking
+// Download tracking with persistence
 const downloads = new Map();
 const activeDownloads = new Set();
+
+// Load persisted downloads on startup
+try {
+  const persistedDownloads = JSON.parse(fs.readFileSync(path.join(process.env.DATA_DIR, 'downloads.json'), 'utf-8'));
+  for (const [id, data] of Object.entries(persistedDownloads)) {
+    downloads.set(id, data);
+  }
+} catch (error) {
+  logger.warn('No persisted downloads found or error loading them:', error);
+}
+
+// Periodically save downloads state
+setInterval(() => {
+  try {
+    const downloadsObject = Object.fromEntries(downloads);
+    fs.writeFileSync(
+      path.join(process.env.DATA_DIR, 'downloads.json'),
+      JSON.stringify(downloadsObject, null, 2)
+    );
+    logger.info('Downloads state persisted successfully');
+  } catch (error) {
+    logger.error('Failed to persist downloads state:', error);
+  }
+}, 60000); // Save every minute
+
+// Clean up old download records
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, data] of downloads.entries()) {
+    if (data.timestamp && (now - new Date(data.timestamp).getTime() > STATUS_EXPIRY)) {
+      downloads.delete(id);
+      logger.info(`Cleaned up old download record: ${id}`);
+    }
+  }
+}, 3600000); // Clean up every hour
 
 // Generate unique download ID
 const generateDownloadId = () => {
   return `dl_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 };
 
-// Update download status with audit logging
+// Update download status with audit logging and persistence
 const updateStatus = async (id, status, progress = null, error = null) => {
   const statusData = {
     status,
@@ -52,6 +93,22 @@ const updateStatus = async (id, status, progress = null, error = null) => {
     downloadId: id,
     ...statusData
   });
+
+  // Save state immediately for important status changes
+  if (status === 'completed' || status === 'failed') {
+    try {
+      const downloadsObject = Object.fromEntries(downloads);
+      await fs.writeFile(
+        path.join(process.env.DATA_DIR, 'downloads.json'),
+        JSON.stringify(downloadsObject, null, 2)
+      );
+    } catch (error) {
+      logger.error('Failed to persist download state:', error);
+    }
+  }
+
+  // Emit status update event
+  global.eventEmitter.emit(`download:${id}`, statusData);
 };
 
 // Validate environment variables
@@ -142,7 +199,7 @@ const verifyVideoFile = async (filePath) => {
 };
 
 // Download and process video
-const downloadVideo = async (url, type = 'movie', retryCount = 0) => {
+const downloadVideo = async (url, type = 'movie', quality = '1080p', retryCount = 0) => {
   validateEnvironment();
 
   if (activeDownloads.size >= MAX_CONCURRENT_DOWNLOADS) {
@@ -170,7 +227,7 @@ const downloadVideo = async (url, type = 'movie', retryCount = 0) => {
     await checkDiskSpace(process.env.COMPLETED_DIR);
 
     activeDownloads.add(downloadId);
-    await processVideo(url, type, downloadId, tempDir);
+    await processVideo(url, type, downloadId, tempDir, quality);
 
     return downloadId;
   } catch (error) {
@@ -183,7 +240,7 @@ const downloadVideo = async (url, type = 'movie', retryCount = 0) => {
         error: error.message
       });
       await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
-      return downloadVideo(url, type, retryCount + 1);
+      return downloadVideo(url, type, quality, retryCount + 1);
     }
 
     await updateStatus(downloadId, 'failed', null, error.message);
@@ -195,18 +252,41 @@ const downloadVideo = async (url, type = 'movie', retryCount = 0) => {
 };
 
 // Main video processing function
-const processVideo = async (url, type, downloadId, tempDir) => {
+const processVideo = async (url, type, downloadId, tempDir, quality = '1080p') => {
   try {
     await updateStatus(downloadId, 'downloading');
     logger.info({
       event: 'download_start',
       url,
       downloadId,
-      tempDir
+      tempDir,
+      quality
     });
     
+    // Determine format based on quality
+    let formatString;
+    switch(quality) {
+      case '2160p':
+        formatString = 'bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/best[height<=2160][ext=mp4]/best';
+        break;
+      case '1440p':
+        formatString = 'bestvideo[height<=1440][ext=mp4]+bestaudio[ext=m4a]/best[height<=1440][ext=mp4]/best';
+        break;
+      case '1080p':
+        formatString = 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best';
+        break;
+      case '720p':
+        formatString = 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best';
+        break;
+      case '480p':
+        formatString = 'bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best';
+        break;
+      default:
+        formatString = 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best';
+    }
+    
     const downloadArgs = [
-      '--format', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+      '--format', formatString,
       '--merge-output-format', 'mp4',
       '--write-info-json',
       '--write-thumbnail',
@@ -312,13 +392,20 @@ const processVideo = async (url, type, downloadId, tempDir) => {
   }
 };
 
-// Get video status
+// Get video status with additional metadata
 const getVideoStatus = (downloadId) => {
   const status = downloads.get(downloadId);
   if (!status) {
     throw new Error('Download not found');
   }
-  return status;
+
+  // Add metadata about the download
+  return {
+    ...status,
+    isActive: activeDownloads.has(downloadId),
+    lastUpdated: status.timestamp,
+    canRetry: status.status === 'failed' && status.error?.includes('network')
+  };
 };
 
 // Get all active downloads

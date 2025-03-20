@@ -18,8 +18,10 @@ router.post('/', [
   checkPermissions
 ], async (req, res) => {
   try {
-    const { videoUrl, type = 'movie' } = req.body;
-    const downloadId = await downloadVideo(videoUrl, type);
+    const { url: videoUrl, type = 'movie', quality = '1080p' } = req.body;
+    const downloadId = await downloadVideo(videoUrl, type, quality);
+    
+    // Return immediately with download ID
     res.json({
       id: downloadId,
       message: 'Download started',
@@ -33,14 +35,19 @@ router.post('/', [
   }
 });
 
-// Get video status
+// Get video status (lightweight endpoint)
 router.get('/:id', [
   authenticate,
   checkPermissions
 ], async (req, res) => {
   try {
     const status = getVideoStatus(req.params.id);
-    res.json(status);
+    // Return only essential data
+    res.json({
+      status: status.status,
+      progress: status.progress || 0,
+      error: status.error || null
+    });
   } catch (error) {
     res.status(404).json({
       error: 'Status not found',

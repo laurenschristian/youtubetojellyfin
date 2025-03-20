@@ -201,7 +201,8 @@ async function loadSettings() {
       apiKey: '',
       defaultType: 'movie',
       autoDownload: false,
-      showLogs: false
+      showLogs: false,
+      quality: '1080p' // Add quality setting
     });
     
     // Save to local storage for faster access next time
@@ -257,26 +258,30 @@ function setButtonLoading(loading) {
   }
 }
 
+// Polling configuration
+const INITIAL_POLL_INTERVAL = 3000; // Start with 3 seconds
+const MAX_POLL_INTERVAL = 30000; // Max 30 seconds
+const BACKOFF_FACTOR = 1.5; // Increase interval by 50% each time
+const MAX_POLL_ATTEMPTS = 200; // About 10 minutes with backoff
+
 class DownloadPoller {
-  constructor(apiUrl, apiKey, downloadId) {
-    this.apiUrl = apiUrl;
-    this.apiKey = apiKey;
+  constructor(downloadId, onUpdate, onComplete, onError) {
     this.downloadId = downloadId;
-    this.retryCount = 0;
-    this.maxRetries = 5;
-    this.baseDelay = 3000; // 3 seconds
-    this.maxDelay = 30000; // 30 seconds
+    this.onUpdate = onUpdate;
+    this.onComplete = onComplete;
+    this.onError = onError;
+    this.currentInterval = INITIAL_POLL_INTERVAL;
+    this.attempts = 0;
     this.timeoutId = null;
-    this.active = false;
+    this.lastStatus = null;
+    this.consecutiveErrors = 0;
   }
 
-  start() {
-    this.active = true;
-    this.poll();
+  async start() {
+    await this.poll();
   }
 
   stop() {
-    this.active = false;
     if (this.timeoutId) {
       clearTimeout(this.timeoutId);
       this.timeoutId = null;
@@ -284,12 +289,15 @@ class DownloadPoller {
   }
 
   async poll() {
-    if (!this.active) return;
+    if (this.attempts >= MAX_POLL_ATTEMPTS) {
+      this.onError(new Error('Polling timeout - download taking too long'));
+      return;
+    }
 
     try {
-      const response = await fetch(`${this.apiUrl}/api/videos/${this.downloadId}`, {
+      const response = await fetch(`${currentSettings.apiUrl}/api/videos/${this.downloadId}`, {
         headers: {
-          'X-API-Key': this.apiKey
+          'X-API-Key': currentSettings.apiKey
         }
       });
 
@@ -298,71 +306,61 @@ class DownloadPoller {
       }
 
       const data = await response.json();
-      console.log('Poll response:', data);
+      this.consecutiveErrors = 0; // Reset error counter on success
 
-      // Reset retry count on successful response
-      this.retryCount = 0;
+      // Call update callback with status
+      this.onUpdate(data);
 
-      // Update UI with progress
-      if (data.progress) {
-        updateProgress(data.progress);
-      }
+      // Store last status
+      this.lastStatus = data.status;
 
-      // Handle different states
+      // Handle different status cases
       switch (data.status) {
         case 'completed':
-          this.stop();
-          setButtonLoading(false);
-          updateProgress(100);
-          updateHistoryItemStatus(this.downloadId, 'completed');
-          showStatus('Download completed successfully');
-          break;
-
-        case 'error':
-          this.stop();
-          setButtonLoading(false);
-          showStatus(`Download failed: ${data.error}`, true);
-          updateHistoryItemStatus(this.downloadId, 'error');
-          break;
-
+          this.onComplete(data);
+          return;
+        case 'failed':
+          this.onError(new Error(data.error || 'Download failed'));
+          return;
         case 'downloading':
-        case 'processing':
-          // Schedule next poll
-          this.schedulePoll(this.baseDelay);
+          // If actively downloading, keep interval short
+          this.currentInterval = INITIAL_POLL_INTERVAL;
           break;
-
         default:
-          this.schedulePoll(this.baseDelay);
+          // For other states, use backoff
+          this.currentInterval = Math.min(
+            this.currentInterval * BACKOFF_FACTOR,
+            MAX_POLL_INTERVAL
+          );
       }
-
     } catch (error) {
       console.error('Polling error:', error);
-      this.retryCount++;
+      this.consecutiveErrors++;
 
-      if (this.retryCount > this.maxRetries) {
-        this.stop();
-        setButtonLoading(false);
-        showStatus('Lost connection to server. Check download status in history.', true);
-        // Save current state to allow manual retry
-        updateHistoryItemStatus(this.downloadId, 'interrupted');
-      } else {
-        // Exponential backoff with jitter
-        const delay = Math.min(
-          this.baseDelay * Math.pow(2, this.retryCount) + Math.random() * 1000,
-          this.maxDelay
+      // If we get 3 consecutive errors, increase interval
+      if (this.consecutiveErrors >= 3) {
+        this.currentInterval = Math.min(
+          this.currentInterval * BACKOFF_FACTOR,
+          MAX_POLL_INTERVAL
         );
-        console.log(`Retrying in ${Math.round(delay/1000)}s... (attempt ${this.retryCount})`);
-        this.schedulePoll(delay);
+      }
+
+      // If we have a last known status, call update with it
+      if (this.lastStatus) {
+        this.onUpdate({
+          status: this.lastStatus,
+          progress: null,
+          error: 'Connection error - will retry'
+        });
       }
     }
-  }
 
-  schedulePoll(delay) {
-    if (!this.active) return;
-    this.timeoutId = setTimeout(() => this.poll(), delay);
+    this.attempts++;
+    this.timeoutId = setTimeout(() => this.poll(), this.currentInterval);
   }
 }
 
+// Start download with robust status tracking
 async function startDownload() {
   console.log('Starting download process...');
   setButtonLoading(true);
@@ -379,7 +377,7 @@ async function startDownload() {
     
     const typeSelect = document.getElementById('type');
     const type = typeSelect ? typeSelect.value : 'movie';
-    console.log('Sending download request:', { videoUrl, type });
+    console.log('Sending download request:', { videoUrl, type, quality: currentSettings.quality });
     
     // Get video title before sending download request
     const tab = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -391,7 +389,11 @@ async function startDownload() {
         'Content-Type': 'application/json',
         'X-API-Key': currentSettings.apiKey
       },
-      body: JSON.stringify({ url: videoUrl, type })
+      body: JSON.stringify({ 
+        url: videoUrl, 
+        type,
+        quality: currentSettings.quality // Add quality to the request
+      })
     });
 
     if (!response.ok) {
@@ -403,22 +405,55 @@ async function startDownload() {
     const data = await response.json();
     console.log('Download request response:', data);
     
-    // Add to history with title
-    addToHistory({
+    // Add to history with initial status
+    const historyItem = {
       id: data.id,
       url: videoUrl,
       title: videoTitle,
       type,
       timestamp: new Date().toISOString(),
-      status: 'downloading'
-    });
+      status: 'downloading',
+      progress: 0
+    };
     
+    addToHistory(historyItem);
     showStatus('Download started successfully');
     updateProgress(0);
     
-    // Start polling for updates
-    const poller = new DownloadPoller(currentSettings.apiUrl, currentSettings.apiKey, data.id);
-    poller.start();
+    // Start polling with new DownloadPoller
+    const poller = new DownloadPoller(
+      data.id,
+      // Update callback
+      (status) => {
+        updateHistoryItemStatus(data.id, status);
+        if (status.progress) {
+          updateProgress(status.progress);
+        }
+      },
+      // Complete callback
+      (finalStatus) => {
+        setButtonLoading(false);
+        showStatus('Download completed successfully');
+        updateHistoryItemStatus(data.id, {
+          status: 'completed',
+          progress: 100
+        });
+        updateProgress(100);
+      },
+      // Error callback
+      (error) => {
+        setButtonLoading(false);
+        showStatus(error.message, true);
+        updateHistoryItemStatus(data.id, {
+          status: 'failed',
+          error: error.message
+        });
+      }
+    );
+
+    // Store poller reference in case we need to cancel
+    window.currentPoller = poller;
+    await poller.start();
 
   } catch (error) {
     console.error('Download error:', error);
@@ -427,28 +462,28 @@ async function startDownload() {
   }
 }
 
-// Update history item status with retry capability
-async function updateHistoryItemStatus(downloadId, status) {
-  console.log('Updating history item status:', { downloadId, status });
-  try {
-    const { downloadHistory = [] } = await chrome.storage.local.get('downloadHistory');
-    const index = downloadHistory.findIndex(item => item.id === downloadId);
+// Update history item with new status
+function updateHistoryItemStatus(downloadId, status) {
+  chrome.storage.local.get(['downloadHistory'], (result) => {
+    const history = result.downloadHistory || [];
+    const index = history.findIndex(item => item.id === downloadId);
     
     if (index !== -1) {
-      downloadHistory[index].status = status;
-      downloadHistory[index].lastUpdated = new Date().toISOString();
+      history[index] = {
+        ...history[index],
+        ...status,
+        lastUpdated: new Date().toISOString()
+      };
       
-      // For interrupted downloads, store additional info for retry
-      if (status === 'interrupted') {
-        downloadHistory[index].canRetry = true;
+      chrome.storage.local.set({ downloadHistory: history });
+      
+      // Update UI if history tab is active
+      const historyContainer = document.getElementById('history');
+      if (historyContainer && historyContainer.style.display !== 'none') {
+        loadHistory();
       }
-      
-      await chrome.storage.local.set({ downloadHistory });
-      await loadHistory();
     }
-  } catch (error) {
-    console.error('Error updating history item status:', error);
-  }
+  });
 }
 
 // Update the history display to show retry buttons for interrupted downloads
