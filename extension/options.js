@@ -27,16 +27,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const loadSettings = async () => {
     console.log('Loading settings...');
     try {
+      // Try to get settings from sync storage first
       const settings = await chrome.storage.sync.get(DEFAULT_SETTINGS);
       console.log('Settings loaded:', { ...settings, apiKey: '[REDACTED]' });
       
       // Update input fields with saved values
-      apiUrlInput.value = settings.apiUrl || DEFAULT_SETTINGS.apiUrl;
-      apiKeyInput.value = settings.apiKey || DEFAULT_SETTINGS.apiKey;
-      defaultQualitySelect.value = settings.defaultQuality || DEFAULT_SETTINGS.defaultQuality;
-      defaultTypeSelect.value = settings.defaultType || DEFAULT_SETTINGS.defaultType;
-      autoDownloadCheckbox.checked = settings.autoDownload || DEFAULT_SETTINGS.autoDownload;
-      showLogsCheckbox.checked = settings.showLogs || DEFAULT_SETTINGS.showLogs;
+      apiUrlInput.value = settings.apiUrl;
+      apiKeyInput.value = settings.apiKey;
+      defaultQualitySelect.value = settings.defaultQuality;
+      defaultTypeSelect.value = settings.defaultType;
+      autoDownloadCheckbox.checked = settings.autoDownload;
+      showLogsCheckbox.checked = settings.showLogs;
       
       // Test connection on load if we have both URL and key
       if (settings.apiUrl && settings.apiKey) {
@@ -143,16 +144,18 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     
     try {
-      // Save to chrome.storage.sync for persistence
+      // Validate required fields
+      if (!settings.apiUrl || !settings.apiKey) {
+        throw new Error('API URL and key are required');
+      }
+
+      // Save to chrome.storage.sync for cross-device persistence
       await chrome.storage.sync.set(settings);
-      console.log('Settings saved successfully');
+      console.log('Settings saved to sync storage');
       
       // Also save to chrome.storage.local for faster access
-      await chrome.storage.local.set({
-        apiUrl: settings.apiUrl,
-        apiKey: settings.apiKey,
-        showLogs: settings.showLogs
-      });
+      await chrome.storage.local.set(settings);
+      console.log('Settings saved to local storage');
       
       const connectionSuccess = await testConnection();
       showStatus(
@@ -161,7 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
       );
     } catch (error) {
       console.error('Error saving settings:', error);
-      showStatus('Error saving settings', true);
+      showStatus(error.message || 'Error saving settings', true);
     }
   };
 

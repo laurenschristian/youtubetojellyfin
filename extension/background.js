@@ -1,15 +1,22 @@
 // Listen for installation
-chrome.runtime.onInstalled.addListener(() => {
-  // Set default configuration
-  chrome.storage.local.set({
-    apiUrl: 'http://localhost:3001/api',  // Default API URL
+chrome.runtime.onInstalled.addListener(async () => {
+  // Set default configuration only if not already set
+  const settings = await chrome.storage.sync.get({
+    apiUrl: 'http://localhost:3001',
     defaultQuality: 'best',
     defaultType: 'movie'
   });
-});
+  
+  // Only set if values are not already present
+  if (!settings.apiUrl) {
+    await chrome.storage.sync.set({
+      apiUrl: 'http://localhost:3001',
+      defaultQuality: 'best',
+      defaultType: 'movie'
+    });
+  }
 
-// Add context menu item
-chrome.runtime.onInstalled.addListener(() => {
+  // Create context menu item
   chrome.contextMenus.create({
     id: 'saveToJellyfin',
     title: 'Save to Jellyfin',
@@ -30,37 +37,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'openPopup') {
     openPopupWithData(message.data.url, message.data.title);
   }
+  return true;
 });
 
 // Helper function to open popup with data
-function openPopupWithData(url, title = '') {
-  chrome.storage.local.get('token', async (result) => {
-    if (!result.token) {
-      // If not logged in, open login page
-      chrome.windows.create({
-        url: 'login.html',
-        type: 'popup',
-        width: 400,
-        height: 600
-      });
-    } else {
-      // Store video data temporarily
-      await chrome.storage.local.set({
-        pendingVideo: {
-          url,
-          title
-        }
-      });
+async function openPopupWithData(url, title = '') {
+  try {
+    // Store video data temporarily
+    await chrome.storage.local.set({
+      pendingVideo: {
+        url,
+        title
+      }
+    });
 
-      // Open main popup
-      chrome.windows.create({
-        url: 'popup.html',
-        type: 'popup',
-        width: 400,
-        height: 600
-      });
-    }
-  });
+    // Create popup window
+    await chrome.windows.create({
+      url: 'popup.html',
+      type: 'popup',
+      width: 400,
+      height: 600
+    });
+  } catch (error) {
+    console.error('Error opening popup:', error);
+  }
 }
 
 // Active downloads being monitored
@@ -73,7 +73,7 @@ const POLL_INTERVAL = 5000;
 const MAX_HISTORY_ITEMS = 100;
 
 // Add download to history
-const addToHistory = async (downloadInfo) => {
+async function addToHistory(downloadInfo) {
   try {
     const { history = [] } = await chrome.storage.local.get('history');
     
@@ -92,10 +92,10 @@ const addToHistory = async (downloadInfo) => {
   } catch (error) {
     console.error('Failed to update history:', error);
   }
-};
+}
 
 // Update download progress
-const updateDownloadProgress = async (downloadId) => {
+async function updateDownloadProgress(downloadId) {
   try {
     const { apiUrl, apiKey } = await chrome.storage.sync.get(['apiUrl', 'apiKey']);
     if (!apiUrl || !apiKey) return;
@@ -139,7 +139,7 @@ const updateDownloadProgress = async (downloadId) => {
         // Show notification
         chrome.notifications.create(`download_${downloadId}`, {
           type: 'basic',
-          iconUrl: 'icon128.png',
+          iconUrl: 'icons/icon128.png',
           title: data.status === 'completed' ? 'Download Complete' : 'Download Failed',
           message: `${download.title} ${data.status === 'completed' ? 'has been downloaded successfully' : 'failed to download'}`
         });
@@ -152,10 +152,10 @@ const updateDownloadProgress = async (downloadId) => {
     console.error(`Failed to update download progress for ${downloadId}:`, error);
     stopPolling(downloadId);
   }
-};
+}
 
 // Start polling for a download
-const startPolling = (downloadId, downloadInfo) => {
+function startPolling(downloadId, downloadInfo) {
   if (!activeDownloads.has(downloadId)) {
     activeDownloads.set(downloadId, downloadInfo);
     
@@ -166,18 +166,18 @@ const startPolling = (downloadId, downloadInfo) => {
 
     activeDownloads.get(downloadId).pollInterval = pollInterval;
   }
-};
+}
 
 // Stop polling for a download
-const stopPolling = (downloadId) => {
+function stopPolling(downloadId) {
   const download = activeDownloads.get(downloadId);
   if (download) {
     clearInterval(download.pollInterval);
     activeDownloads.delete(downloadId);
   }
-};
+}
 
-// Listen for messages from popup or content script
+// Listen for messages from popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'START_DOWNLOAD') {
     startPolling(message.downloadId, {
@@ -272,5 +272,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         currentDownloadId = null;
       }
     }, 3600000);
+  }
+});
+
+let popupWindowId = null;
+
+chrome.action.onClicked.addListener(async () => {
+  // If window exists, focus it instead of creating a new one
+  if (popupWindowId !== null) {
+    try {
+      const window = await chrome.windows.get(popupWindowId);
+      chrome.windows.update(popupWindowId, { focused: true });
+      return;
+    } catch (e) {
+      // Window doesn't exist anymore, reset the ID
+      popupWindowId = null;
+    }
+  }
+
+  // Create new window
+  const popup = await chrome.windows.create({
+    url: 'popup.html',
+    type: 'popup',
+    width: 400,
+    height: 600,
+    focused: true
+  });
+  
+  popupWindowId = popup.id;
+});
+
+// Listen for window close to reset the ID
+chrome.windows.onRemoved.addListener((windowId) => {
+  if (windowId === popupWindowId) {
+    popupWindowId = null;
   }
 }); 
