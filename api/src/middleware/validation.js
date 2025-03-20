@@ -1,3 +1,4 @@
+const express = require('express');
 const { URL } = require('url');
 const { logger } = require('./audit');
 
@@ -12,8 +13,14 @@ const SUPPORTED_PLATFORMS = [
 // Supported content types
 const VALID_TYPES = ['movie', 'show', 'music'];
 
-// Load allowed domains from environment
-const ALLOWED_DOMAINS = process.env.ALLOWED_DOMAINS.split(',');
+// Default allowed domains if not specified in environment
+const DEFAULT_ALLOWED_DOMAINS = ['youtube.com', 'youtu.be'];
+
+// Get allowed domains from environment or use defaults
+const ALLOWED_DOMAINS = process.env.ALLOWED_DOMAINS ? 
+  process.env.ALLOWED_DOMAINS.split(',') : 
+  DEFAULT_ALLOWED_DOMAINS;
+
 const MAX_TITLE_LENGTH = parseInt(process.env.MAX_TITLE_LENGTH, 10);
 const MAX_FILE_SIZE_GB = parseInt(process.env.MAX_FILE_SIZE_GB, 5);
 
@@ -34,60 +41,66 @@ const isValidYouTubeUrl = (url) => {
 
 // Validate video request middleware
 const validateVideoRequest = (req, res, next) => {
-  const { videoUrl, type = 'movie' } = req.body;
+  const { url } = req.body;
 
-  // Check if URL is provided
-  if (!videoUrl) {
+  if (!url) {
     return res.status(400).json({
-      error: 'Validation error',
-      message: 'Video URL is required'
+      error: 'Invalid Request',
+      message: 'URL is required'
     });
   }
 
-  // Validate URL format
-  let parsedUrl;
   try {
-    parsedUrl = new URL(videoUrl);
+    const videoUrl = new URL(url);
+    const domain = videoUrl.hostname.replace('www.', '');
+
+    if (!ALLOWED_DOMAINS.some(allowed => domain.endsWith(allowed))) {
+      return res.status(400).json({
+        error: 'Invalid Domain',
+        message: `URL must be from one of these domains: ${ALLOWED_DOMAINS.join(', ')}`
+      });
+    }
+
+    // Check if platform is supported
+    const isSupported = SUPPORTED_PLATFORMS.some(platform => 
+      videoUrl.hostname.includes(platform)
+    );
+
+    if (!isSupported) {
+      logger.warn({
+        message: 'Unsupported platform attempted',
+        url: url,
+        hostname: videoUrl.hostname
+      });
+      return res.status(400).json({
+        error: 'Validation error',
+        message: 'Unsupported video platform'
+      });
+    }
+
+    // Validate content type
+    const { type = 'movie' } = req.body;
+    if (!VALID_TYPES.includes(type)) {
+      return res.status(400).json({
+        error: 'Validation error',
+        message: `Invalid content type. Must be one of: ${VALID_TYPES.join(', ')}`
+      });
+    }
+
+    // Add validated data to request
+    req.validatedData = {
+      videoUrl,
+      type,
+      platform: videoUrl.hostname
+    };
+
+    next();
   } catch (error) {
     return res.status(400).json({
-      error: 'Validation error',
-      message: 'Invalid URL format'
+      error: 'Invalid URL',
+      message: 'The provided URL is not valid'
     });
   }
-
-  // Check if platform is supported
-  const isSupported = SUPPORTED_PLATFORMS.some(platform => 
-    parsedUrl.hostname.includes(platform)
-  );
-
-  if (!isSupported) {
-    logger.warn({
-      message: 'Unsupported platform attempted',
-      url: videoUrl,
-      hostname: parsedUrl.hostname
-    });
-    return res.status(400).json({
-      error: 'Validation error',
-      message: 'Unsupported video platform'
-    });
-  }
-
-  // Validate content type
-  if (!VALID_TYPES.includes(type)) {
-    return res.status(400).json({
-      error: 'Validation error',
-      message: `Invalid content type. Must be one of: ${VALID_TYPES.join(', ')}`
-    });
-  }
-
-  // Add validated data to request
-  req.validatedData = {
-    videoUrl,
-    type,
-    platform: parsedUrl.hostname
-  };
-
-  next();
 };
 
 module.exports = {

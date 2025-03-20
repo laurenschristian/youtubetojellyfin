@@ -10,16 +10,31 @@ const EventEmitter = require('events');
 global.eventEmitter = new EventEmitter();
 global.eventEmitter.setMaxListeners(100); // Allow many clients
 
-// Ensure log directory exists with proper permissions
+// Constants and directory setup
+const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
 const LOG_DIR = process.env.LOG_DIR || path.join(process.cwd(), 'logs');
-try {
-  if (!fsSync.existsSync(LOG_DIR)) {
-    fsSync.mkdirSync(LOG_DIR, { recursive: true, mode: 0o755 });
+const DOWNLOAD_DIR = process.env.DOWNLOAD_DIR || path.join(process.cwd(), 'downloads');
+const COMPLETED_DIR = process.env.COMPLETED_DIR || path.join(process.cwd(), 'media');
+
+// Ensure required directories exist
+const ensureDirectories = () => {
+  const dirs = [DATA_DIR, LOG_DIR, DOWNLOAD_DIR, COMPLETED_DIR];
+  
+  for (const dir of dirs) {
+    if (!fsSync.existsSync(dir)) {
+      try {
+        fsSync.mkdirSync(dir, { recursive: true, mode: 0o755 });
+        console.log(`Created directory: ${dir}`);
+      } catch (error) {
+        console.error(`Failed to create directory ${dir}:`, error);
+        process.exit(1);
+      }
+    }
   }
-} catch (error) {
-  console.error('Failed to create log directory:', error);
-  process.exit(1);
-}
+};
+
+// Create directories before initializing
+ensureDirectories();
 
 // Initialize logger
 const logger = createLogger({
@@ -36,24 +51,15 @@ const logger = createLogger({
   ]
 });
 
-// Constants
-const MAX_RETRIES = 3;
-const RETRY_DELAY = 5000; // 5 seconds
-const MAX_CONCURRENT_DOWNLOADS = parseInt(process.env.MAX_CONCURRENT_DOWNLOADS, 10) || 2;
-const MAX_FILE_SIZE_GB = parseInt(process.env.MAX_FILE_SIZE_GB, 10) || 10;
-const MAX_TITLE_LENGTH = parseInt(process.env.MAX_TITLE_LENGTH, 10) || 200;
-const ALLOWED_VIDEO_FORMATS = (process.env.ALLOWED_VIDEO_FORMATS || 'mp4,mkv').split(',');
-const STATUS_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
-
-// Download tracking with persistence
-const downloads = new Map();
-const activeDownloads = new Set();
-
 // Load persisted downloads on startup
 try {
-  const persistedDownloads = JSON.parse(fs.readFileSync(path.join(process.env.DATA_DIR, 'downloads.json'), 'utf-8'));
-  for (const [id, data] of Object.entries(persistedDownloads)) {
-    downloads.set(id, data);
+  const downloadsPath = path.join(DATA_DIR, 'downloads.json');
+  if (fsSync.existsSync(downloadsPath)) {
+    const persistedDownloads = JSON.parse(fsSync.readFileSync(downloadsPath, 'utf-8'));
+    for (const [id, data] of Object.entries(persistedDownloads)) {
+      downloads.set(id, data);
+    }
+    logger.info('Loaded persisted downloads successfully');
   }
 } catch (error) {
   logger.warn('No persisted downloads found or error loading them:', error);
@@ -63,15 +69,28 @@ try {
 setInterval(() => {
   try {
     const downloadsObject = Object.fromEntries(downloads);
-    fs.writeFileSync(
-      path.join(process.env.DATA_DIR, 'downloads.json'),
+    fsSync.writeFileSync(
+      path.join(DATA_DIR, 'downloads.json'),
       JSON.stringify(downloadsObject, null, 2)
     );
     logger.info('Downloads state persisted successfully');
   } catch (error) {
     logger.error('Failed to persist downloads state:', error);
   }
-}, 60000); // Save every minute
+}, 60000);
+
+// Constants
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 5000; // 5 seconds
+const MAX_CONCURRENT_DOWNLOADS = parseInt(process.env.MAX_CONCURRENT_DOWNLOADS, 10) || 2;
+const MAX_FILE_SIZE_GB = parseInt(process.env.MAX_FILE_SIZE_GB, 10) || 10;
+const MAX_TITLE_LENGTH = parseInt(process.env.MAX_TITLE_LENGTH, 10) || 200;
+const ALLOWED_VIDEO_FORMATS = (process.env.ALLOWED_VIDEO_FORMATS || 'mp4,mkv').split(',');
+const STATUS_EXPIRY = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+
+// Download tracking
+const downloads = new Map();
+const activeDownloads = new Set();
 
 // Clean up old download records
 setInterval(() => {
@@ -111,8 +130,8 @@ const updateStatus = async (id, status, progress = null, error = null) => {
   if (status === 'completed' || status === 'failed') {
     try {
       const downloadsObject = Object.fromEntries(downloads);
-      await fs.writeFile(
-        path.join(process.env.DATA_DIR, 'downloads.json'),
+      fsSync.writeFileSync(
+        path.join(DATA_DIR, 'downloads.json'),
         JSON.stringify(downloadsObject, null, 2)
       );
     } catch (error) {
@@ -128,8 +147,8 @@ const updateStatus = async (id, status, progress = null, error = null) => {
 const validateEnvironment = () => {
   // Define required directories with defaults
   const dirs = {
-    DOWNLOAD_DIR: process.env.DOWNLOAD_DIR || path.join(process.cwd(), 'downloads'),
-    COMPLETED_DIR: process.env.COMPLETED_DIR || path.join(process.cwd(), 'media'),
+    DOWNLOAD_DIR: DOWNLOAD_DIR,
+    COMPLETED_DIR: COMPLETED_DIR,
     LOG_DIR: LOG_DIR // Use the already defined LOG_DIR
   };
 
