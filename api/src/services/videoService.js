@@ -1,6 +1,7 @@
 const execa = require('execa');
 const path = require('path');
 const fs = require('fs').promises;
+const fsSync = require('fs');
 const { createLogger, format, transports } = require('winston');
 const { logFileAccess } = require('../middleware/audit');
 const EventEmitter = require('events');
@@ -8,6 +9,17 @@ const EventEmitter = require('events');
 // Initialize event emitter for status updates
 global.eventEmitter = new EventEmitter();
 global.eventEmitter.setMaxListeners(100); // Allow many clients
+
+// Ensure log directory exists with proper permissions
+const LOG_DIR = process.env.LOG_DIR || path.join(process.cwd(), 'logs');
+try {
+  if (!fsSync.existsSync(LOG_DIR)) {
+    fsSync.mkdirSync(LOG_DIR, { recursive: true, mode: 0o755 });
+  }
+} catch (error) {
+  console.error('Failed to create log directory:', error);
+  process.exit(1);
+}
 
 // Initialize logger
 const logger = createLogger({
@@ -18,7 +30,8 @@ const logger = createLogger({
   transports: [
     new transports.Console(),
     new transports.File({ 
-      filename: `${process.env.LOG_DIR}/video-service.log` 
+      filename: path.join(LOG_DIR, 'video-service.log'),
+      options: { flags: 'a' }
     })
   ]
 });
@@ -111,14 +124,31 @@ const updateStatus = async (id, status, progress = null, error = null) => {
   global.eventEmitter.emit(`download:${id}`, statusData);
 };
 
-// Validate environment variables
+// Validate environment variables and ensure directories exist
 const validateEnvironment = () => {
-  const required = ['DOWNLOAD_DIR', 'COMPLETED_DIR', 'LOG_DIR'];
-  const missing = required.filter(key => !process.env[key]);
-  
-  if (missing.length > 0) {
-    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+  // Define required directories with defaults
+  const dirs = {
+    DOWNLOAD_DIR: process.env.DOWNLOAD_DIR || path.join(process.cwd(), 'downloads'),
+    COMPLETED_DIR: process.env.COMPLETED_DIR || path.join(process.cwd(), 'media'),
+    LOG_DIR: LOG_DIR // Use the already defined LOG_DIR
+  };
+
+  // Ensure all directories exist with proper permissions
+  for (const [key, dir] of Object.entries(dirs)) {
+    try {
+      if (!fsSync.existsSync(dir)) {
+        fsSync.mkdirSync(dir, { recursive: true, mode: 0o755 });
+        logger.info(`Created directory: ${dir}`);
+      }
+      // Update environment variable with resolved path
+      process.env[key] = dir;
+    } catch (error) {
+      logger.error(`Failed to create/access ${key} directory:`, error);
+      throw new Error(`Failed to create/access ${key} directory: ${error.message}`);
+    }
   }
+
+  logger.info('Environment validation completed successfully', { dirs });
 };
 
 // Check available disk space
