@@ -22,6 +22,9 @@ const logger = createLogger({
 // Initialize Express app
 const app = express();
 
+// Trust proxy - required for rate limiting behind a reverse proxy
+app.set('trust proxy', 1);
+
 // Basic security middleware with relaxed settings for development
 app.use(helmet({
   crossOriginResourcePolicy: false,
@@ -39,23 +42,32 @@ app.use(cors({
 
 app.use(express.json());
 
-// Rate limiting
+// Rate limiting with proxy support
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100 // limit each IP to 100 requests per windowMs
+  max: 100, // limit each IP to 100 requests per windowMs
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  // Use forwarded IP if available
+  keyGenerator: (req) => {
+    return req.ip || req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  }
 });
 app.use(limiter);
 
-// Request logging middleware
+// Request logging middleware with proper IP handling
 app.use((req, res, next) => {
   // Add CORS headers to every response
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, X-API-Key, Authorization');
   
+  // Log the real client IP
+  const clientIp = req.headers['x-forwarded-for']?.split(',')[0] || req.ip;
   logger.info(`${req.method} ${req.url}`, {
-    ip: req.ip,
-    userAgent: req.get('user-agent')
+    ip: clientIp,
+    userAgent: req.get('user-agent'),
+    timestamp: new Date().toISOString()
   });
   next();
 });
