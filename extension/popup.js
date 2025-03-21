@@ -171,7 +171,9 @@ async function testApiConnection() {
   console.log('Testing API connection...');
   try {
     const response = await fetch(`${currentSettings.apiUrl}/health`, {
+      method: 'GET',
       headers: {
+        'Content-Type': 'application/json',
         'X-API-Key': currentSettings.apiKey
       }
     });
@@ -270,195 +272,125 @@ class DownloadPoller {
     this.onUpdate = onUpdate;
     this.onComplete = onComplete;
     this.onError = onError;
-    this.currentInterval = INITIAL_POLL_INTERVAL;
-    this.attempts = 0;
-    this.timeoutId = null;
-    this.lastStatus = null;
-    this.consecutiveErrors = 0;
-  }
-
-  async start() {
-    await this.poll();
-  }
-
-  stop() {
-    if (this.timeoutId) {
-      clearTimeout(this.timeoutId);
-      this.timeoutId = null;
-    }
+    this.interval = null;
+    this.retryCount = 0;
+    this.maxRetries = 3;
   }
 
   async poll() {
-    if (this.attempts >= MAX_POLL_ATTEMPTS) {
-      this.onError(new Error('Polling timeout - download taking too long'));
-      return;
-    }
-
     try {
       const response = await fetch(`${currentSettings.apiUrl}/api/videos/${this.downloadId}`, {
+        method: 'GET',
         headers: {
+          'Content-Type': 'application/json',
           'X-API-Key': currentSettings.apiKey
         }
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(`API error: ${response.status}`);
       }
 
       const data = await response.json();
-      this.consecutiveErrors = 0; // Reset error counter on success
+      
+      if (data.error) {
+        throw new Error(data.error);
+      }
 
-      // Call update callback with status
       this.onUpdate(data);
 
-      // Store last status
-      this.lastStatus = data.status;
-
-      // Handle different status cases
-      switch (data.status) {
-        case 'completed':
-          this.onComplete(data);
-          return;
-        case 'failed':
-          this.onError(new Error(data.error || 'Download failed'));
-          return;
-        case 'downloading':
-          // If actively downloading, keep interval short
-          this.currentInterval = INITIAL_POLL_INTERVAL;
-          break;
-        default:
-          // For other states, use backoff
-          this.currentInterval = Math.min(
-            this.currentInterval * BACKOFF_FACTOR,
-            MAX_POLL_INTERVAL
-          );
+      if (data.status === 'completed') {
+        this.stop();
+        this.onComplete(data);
+      } else if (data.status === 'failed') {
+        this.stop();
+        this.onError(new Error(data.error || 'Download failed'));
       }
     } catch (error) {
-      console.error('Polling error:', error);
-      this.consecutiveErrors++;
-
-      // If we get 3 consecutive errors, increase interval
-      if (this.consecutiveErrors >= 3) {
-        this.currentInterval = Math.min(
-          this.currentInterval * BACKOFF_FACTOR,
-          MAX_POLL_INTERVAL
-        );
-      }
-
-      // If we have a last known status, call update with it
-      if (this.lastStatus) {
-        this.onUpdate({
-          status: this.lastStatus,
-          progress: null,
-          error: 'Connection error - will retry'
-        });
+      console.error('Error polling download status:', error);
+      this.retryCount++;
+      
+      if (this.retryCount >= this.maxRetries) {
+        this.stop();
+        this.onError(error);
       }
     }
-
-    this.attempts++;
-    this.timeoutId = setTimeout(() => this.poll(), this.currentInterval);
   }
 }
 
 // Start download with robust status tracking
 async function startDownload() {
-  console.log('Starting download process...');
-  setButtonLoading(true);
-  
+  console.log('Starting download...');
   try {
-    if (!currentSettings?.apiUrl || !currentSettings?.apiKey) {
-      throw new Error('API configuration missing. Please check settings.');
-    }
-    
     const videoUrl = await getCurrentTabUrl();
     if (!videoUrl) {
-      throw new Error('No valid YouTube video URL found');
+      throw new Error('No valid YouTube URL found');
     }
-    
-    const typeSelect = document.getElementById('type');
-    const type = typeSelect ? typeSelect.value : 'movie';
-    console.log('Sending download request:', { videoUrl, type, quality: currentSettings.quality });
-    
-    // Get video title before sending download request
-    const tab = await chrome.tabs.query({ active: true, currentWindow: true });
-    const videoTitle = tab[0]?.title?.replace(' - YouTube', '') || 'Unknown Title';
-    
+
+    setButtonLoading(true);
+    showStatus('Starting download...');
+
+    const type = document.getElementById('type').value;
+    const quality = currentSettings.quality || '1080p';
+
     const response = await fetch(`${currentSettings.apiUrl}/api/videos`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-API-Key': currentSettings.apiKey
       },
-      body: JSON.stringify({ 
-        url: videoUrl, 
+      body: JSON.stringify({
+        url: videoUrl,
         type,
-        quality: currentSettings.quality // Add quality to the request
+        quality
       })
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('API error response:', errorText);
-      throw new Error(`API error: ${response.status} - ${errorText}`);
+      const error = await response.json();
+      throw new Error(error.message || `API error: ${response.status}`);
     }
 
     const data = await response.json();
-    console.log('Download request response:', data);
-    
-    // Add to history with initial status
-    const historyItem = {
+    console.log('Download started:', data);
+
+    // Add to history immediately
+    await addToHistory({
       id: data.id,
       url: videoUrl,
-      title: videoTitle,
       type,
-      timestamp: new Date().toISOString(),
-      status: 'downloading',
-      progress: 0
-    };
-    
-    addToHistory(historyItem);
-    showStatus('Download started successfully');
-    updateProgress(0);
-    
-    // Start polling with new DownloadPoller
+      status: 'pending',
+      timestamp: new Date().toISOString()
+    });
+
+    // Start polling for status
     const poller = new DownloadPoller(
       data.id,
-      // Update callback
       (status) => {
+        console.log('Download status update:', status);
+        updateProgress(status.progress || 0);
         updateHistoryItemStatus(data.id, status);
-        if (status.progress) {
-          updateProgress(status.progress);
-        }
       },
-      // Complete callback
       (finalStatus) => {
+        console.log('Download completed:', finalStatus);
+        showStatus('Download completed successfully!');
         setButtonLoading(false);
-        showStatus('Download completed successfully');
-        updateHistoryItemStatus(data.id, {
-          status: 'completed',
-          progress: 100
-        });
-        updateProgress(100);
       },
-      // Error callback
       (error) => {
+        console.error('Download failed:', error);
+        showStatus(`Download failed: ${error.message}`, true);
         setButtonLoading(false);
-        showStatus(error.message, true);
-        updateHistoryItemStatus(data.id, {
-          status: 'failed',
-          error: error.message
-        });
       }
     );
 
-    // Store poller reference in case we need to cancel
-    window.currentPoller = poller;
     await poller.start();
+    return data.id;
 
   } catch (error) {
-    console.error('Download error:', error);
-    showStatus(error.message, true);
+    console.error('Error starting download:', error);
+    showStatus(`Download failed: ${error.message}`, true);
     setButtonLoading(false);
+    throw error;
   }
 }
 
